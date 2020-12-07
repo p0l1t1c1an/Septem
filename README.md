@@ -28,6 +28,7 @@ you were for the week. As well, it has the percentage for each individual applic
 - [ ] Simple graphical application that can generate config files and visualize data
 - [ ] Startup service support for bsd init system (maybe Linux systemd but I can't test it)
 - [ ] Track and whitelist webpages you're on (Probably just for Firefox)
+- [ ] Can be reconfigured whilst the program is running
 - [ ] Support for wayland/SwayWM (or seperate version) 
 
 ### Rust Libraries being used
