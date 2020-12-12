@@ -43,16 +43,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 match r {
                     xcb::PROPERTY_NOTIFY => {
                         let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
-                        if prop.atom() == ewmh.ACTIVE_WINDOW() {
-                            println!("Property: AW");
-                        } else if prop.atom() == ewmh.WM_NAME() {
-                            println!("Property: WN");
-                        } else if prop.atom() == ewmh.WM_VISIBLE_NAME() {
-                            println!("Property: WVN");
-                        } else if prop.atom() == ewmh.CURRENT_DESKTOP() {
-                            println!("Property: CD");
-                        } else {
-                            println!("Other Property: {}", prop.atom());
+                        if prop.atom() == ewmh.ACTIVE_WINDOW() || prop.atom() == ewmh.WM_NAME() || prop.atom() == ewmh.WM_VISIBLE_NAME() || prop.atom() == ewmh.CURRENT_DESKTOP() {
+                            let active = xcb_util::ewmh::get_active_window(&ewmh, screen_id).get_reply()?;
+                            let pid = xcb_util::ewmh::get_wm_pid(&ewmh, active).get_reply()?;
+                            let name = xcb_util::ewmh::get_wm_name(&ewmh, active).get_reply()?;
+
+                            println!("Name: {}, PID: {}", name.string(), pid);
                         }
                     }
                     _ => {}
