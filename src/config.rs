@@ -7,6 +7,9 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, BufReader};
 
+const DEFAULT_SHARE : &str = "/.local/share/Septem/";
+const DEFAULT_CONFIG : &str = "/.config/Septem/septem.toml";
+
 pub enum ConfigError {
     G,
 }
@@ -14,17 +17,21 @@ pub enum ConfigError {
 pub struct Config {
     config_file : String,
     shared_dir : String,
-    delay : Duration,
     whitelist : Vec<String>,
-    use_PID : bool,
-    use_name : bool,
+    start_hour : u8,
+    stop_hour : u8,
+    // TODO: Add vector of Dates to disable Septem on  
 }
 
 impl Config {
-    pub fn new(c : String, s : String) -> Result<Config, ConfigError> {
+    pub fn new(c : String) -> Result<Config, ConfigError> {
 
     }
-
+    
+    pub fn new_with_share(c : String, s : String) -> Result<Config, ConfigError> {
+        
+    }
+    
     pub fn config_file<'a>(&'a self) -> &'a String {
         &self.config_file
     }
@@ -32,42 +39,37 @@ impl Config {
     pub fn shared_dir<'a>(&'a self) -> &'a String {
         &self.shared_dir
     }
-
-    pub fn delay(&self) -> Duration {
-        self.delay
-    }
     
     pub fn whitelist<'a>(&'a self) -> &'a Vec<String> {
         &self.whitelist
     }
-
-    pub fn use_PID(&self) -> bool {
-        self.use_PID
-    }
-
-    pub fn use_name(&self) -> bool {
-        self.use_name
-    }
 }
+
+/*
+ * TODO 
+ * This needs an option where we can not provide a share directory
+ * and then load a share option from the config.
+ *
+ */
+
 
 #[macro_export]
 macro_rules! config {
     (config:$c:expr, share:$s:expr) => { // Both Strings
-        Config::new($c, $s)
+        Config::new_with_share($c, $s)
     }
 
     (config:$c:expr) => {
-        let home = env::var("HOME").unwrap();
-        Config::new($c, home + "/.local/share/Septem/")
+        Config::new($c)
     }
 
     (share:$s:expr) => {
         let home = env::var("HOME").unwrap();
-        Config::new(home + "/.config/Septem/septem.toml", $s)
+        Config::new_with_share(home + DEFAULT_CONFIG, $s)
     }
 
     () => {
         let home = env::var("HOME").unwrap();
-        Config::new(home + "/.config/Septem/septem.toml", home + "/.local/share/Septem/")
+        Config::new(home + DEFAULT_CONFIG)
     }
 }

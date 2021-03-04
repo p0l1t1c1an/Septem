@@ -18,7 +18,7 @@ pub struct Process {
 impl Process {
     unsafe fn set_name(&mut self, ptr : *const c_char){
         for i in 0..strlen(ptr) {
-            self.name.push(*ptr.offset(i as isize) as u8 as char);
+            self.name.push(*ptr.offset(i as isize) as char);
         }
     }
 
