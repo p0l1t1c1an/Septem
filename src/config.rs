@@ -7,33 +7,46 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, BufReader};
 
+use chrono::{Date, Local};
+
+use toml::DateTime;
+use serde_derive::Deserialize;
+
 const DEFAULT_SHARE : &str = "/.local/share/Septem/";
 const DEFAULT_CONFIG : &str = "/.config/Septem/septem.toml";
 
 pub enum ConfigError {
     G,
+    T(toml::Error),
 }
 
+
 pub struct Config {
-    config_file : String,
     shared_dir : String,
-    whitelist : Vec<String>,
+    process_names : Vec<String>,
+    dates : Vec<Date<Local>>,
     start_hour : u8,
     stop_hour : u8,
-    // TODO: Add vector of Dates to disable Septem on  
+    min_sec : u8,
 }
 
 impl Config {
-    pub fn new(c : String) -> Result<Config, ConfigError> {
 
+    // Defaults will be overwritten when parsing config file
+    // Will only set share directory if it is empty beforehand
+    pub fn new(c : String) -> Result<Config, ConfigError> {
+        // Take parsed config file and check that values are valid
     }
     
     pub fn new_with_share(c : String, s : String) -> Result<Config, ConfigError> {
-        
+        // Same as normal config then set shared directory
+        // Will generate files in share if they don't exist already
     }
-    
-    pub fn config_file<'a>(&'a self) -> &'a String {
-        &self.config_file
+
+    fn parse(c : String) -> Result<Config, ConfigError> {
+        // Use toml::from_str to read config file and generate
+        // config or return error from toml
+        // Will need to read file and load into string first
     }
     
     pub fn shared_dir<'a>(&'a self) -> &'a String {
@@ -44,14 +57,6 @@ impl Config {
         &self.whitelist
     }
 }
-
-/*
- * TODO 
- * This needs an option where we can not provide a share directory
- * and then load a share option from the config.
- *
- */
-
 
 #[macro_export]
 macro_rules! config {
