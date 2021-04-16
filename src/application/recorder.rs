@@ -6,10 +6,15 @@ use std::collections::HashMap;
 
 pub struct Recorder {
     share_dir : &String,
-    curr_proc : Process,
+    curr_proc : Process,   
     start_time : SystemTime,
     proc_times : HashMap<String, u64>,
 }
+
+// These should be an Arc of a Process and Arc of a SystemTime. 
+// They will be stored in application's startup process. 
+// Then, ewmh thread can update PID and the Arcs get reset 
+// in both the Recorder and Alert threads.
 
 impl Recorder {
 
