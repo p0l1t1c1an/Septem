@@ -1,9 +1,8 @@
 
-use xcb::{ConnError, GenericError};
+use xcb::{ConnError, GenericError, GenericEvent};
 use xcb_util::ewmh;
 
-use tokio::time::{timeout, Duration};
-
+use tokio::time::Duration;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -15,10 +14,11 @@ enum EventError {
     ScreenIteratorError(i32),
 
     // Could integrate xcb-util-errors to get verbose error string
-    #[error("Failed either the mask change, EWMH connection, or active window. Error Code is {1}")]
+    #[error("Failed either the mask change, EWMH connection, or active window. \nError Code is {1}")]
     GenericXcbError(GenericError, u8),
-
-    UnknownError
+   
+    #[error("Why are you running?")]
+    UnknownError,
 }
 
 impl From<GenericError> for EventError {
@@ -45,7 +45,7 @@ impl EventHandler {
     
     pub fn new(sec : u32) -> EventResult<EventHandler> {
         let mut handler : EventHandler;
-        handler.event = Event { pid : 0 };
+        handler.event = 0;
         handler.min_time = Duration::from_secs(sec);
 
         let (conn, screen_id) = xcb::Connection::connect(None)?;
@@ -57,31 +57,25 @@ impl EventHandler {
             .get_setup()
             .roots()
             .nth(screen_id as usize)
-            .ok_or(ScreenIteratorError(screen_id))?;
+            .ok_or(EventError::ScreenIteratorError(screen_id))?;
         
         let list = [(xcb::CW_EVENT_MASK, xcb::EVENT_MASK_PROPERTY_CHANGE)];
 
         let cookie = xcb::change_window_attributes_checked(&conn, screen.root(), &list);
         cookie.request_check()?;
 
-        match xcb_util::ewmh::Connection::connect(conn) {
-            Ok(c) => {
-                handler.conn = c;
-                handler.active_win = c.ACTIVE_WINDOW();
-                handler.wm_name = c.WM_NAME();
-                handler.vis_name = c.WM_VISIBLE_NAME();
-                handler.curr_desk = c.CURRENT_DESKTOP();
-                Ok(handler)
-            },
-            Err((error, _)) => {
-                Err(error)
-            }
-        }
+        handler.conn = xcb_util::ewmh::Connection::connect(conn).or_else(|(e,_)| { Err(e) } )?;
+        handler.active_win = handler.conn.ACTIVE_WINDOW();
+        handler.wm_name = handler.conn.WM_NAME();
+        handler.vis_name = handler.conn.WM_VISIBLE_NAME();
+        handler.curr_desk = handler.conn.CURRENT_DESKTOP();
+        Ok(handler)
     }
+
 
     // TODO set up so that it can async check if min_time has pass before updating 
     // (sending that new window has been focused)
-    pub fn start(self) {
+    pub async fn start(mut self) -> Result<(), EventError>{
         loop { 
             let event = self.conn.wait_for_event();
             
@@ -91,8 +85,7 @@ impl EventHandler {
                 }
                 Some(event) => {
                     let r = event.response_type() & !0x80;
-
-                     if (r == xcb::PROPERTY_NOTIFY) {
+                     if r == xcb::PROPERTY_NOTIFY {
                         let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
                         let atom = prop.atom();
 
@@ -104,6 +97,8 @@ impl EventHandler {
                 }
             }
         }
+        
+        Ok(())
     } 
 }
 

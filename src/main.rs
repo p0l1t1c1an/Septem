@@ -1,3 +1,7 @@
+
+mod config;
+mod application;
+
 use xcb;
 use xcb_util;
 
