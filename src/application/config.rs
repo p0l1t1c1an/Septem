@@ -40,7 +40,7 @@ pub struct Config {
 impl Config {
 
     // Temp default solution
-    pub fn new() -> Result<Config, ConfigError> {
+    pub async fn new() -> Result<Config, ConfigError> {
         let home = env::var("HOME")?;
         let mut config_file = String::new();
         
