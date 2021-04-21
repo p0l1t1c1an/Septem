@@ -25,6 +25,7 @@ pub enum ProcessError {
     UnknownError,
 }
 
+#[derive(Clone, Debug)]
 pub struct Process {
     pub pid : pid_t,
     pub name : String

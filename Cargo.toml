@@ -24,6 +24,8 @@ toml = "0.5"
 
 thiserror = "1.0"
 
+async-trait = "0.1.50"
+
 [build-dependencies]
 cc = "1.0"
 
