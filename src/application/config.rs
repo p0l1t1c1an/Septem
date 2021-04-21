@@ -1,10 +1,12 @@
 
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use std::env;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 
-use toml::value::Datetime;
 use serde_derive::Deserialize;
 
 use thiserror::Error;
@@ -27,9 +29,35 @@ pub enum ConfigError {
     UnknownError,
 }
 
-#[derive(Deserialize, Debug)]
+trait Month {
+    fn month(&self) -> Option<u8>;
+}
+
+trait Week {
+    fn week(&self) -> Option<u8>;
+}
+
+trait Day {
+    fn day(&self) -> Option<u8>;
+}
+
+/* 
+ * TODO:
+ *
+ * Alert System Configurations
+ *
+ *
+ */
+
+#[derive(Clone, Deserialize, Debug)]
 pub struct EventHandlerConfig {
     min_focus_time : u8,
+}
+
+impl EventHandlerConfig {
+    pub fn min_focus_time(&self) -> u8 {
+        self.min_focus_time
+    }
 }
 
 impl Default for EventHandlerConfig {
@@ -38,44 +66,87 @@ impl Default for EventHandlerConfig {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 pub struct RecorderConfig {
     productive : Vec<String>,
     unproductive : Vec<String>,
 }
 
-#[derive(Clone, Deserialize, Debug)]
-pub struct MonthWeekDay {
-    month : u8,
-    week : u8, 
-    day : u8,
+impl<'a> RecorderConfig { 
+    pub fn productive(&'a self) -> &'a Vec<String> {
+        &self.productive
+    }
+    
+    pub fn unproductive(&'a self) -> &'a Vec<String> {
+        &self.unproductive
+    }
 }
 
 #[derive(Clone, Deserialize, Debug)]
-pub struct MonthDay {
-    month : u8,
-    day : u8,
+#[serde(untagged)]
+pub enum Date {
+    MonthWeekDay{month : u8, week : u8, day : u8},
+    MonthDay{month : u8, day : u8},
+    WeekDay{week : u8, day : u8},
 }
 
-#[derive(Clone, Deserialize, Debug)]
-pub struct WeekDay {
-    week : u8,
-    day : u8,
+impl Month for Date {
+    fn month(&self) -> Option<u8> {
+        match *self {
+            Self::MonthWeekDay{month, week : _, day : _} => Some(month),
+            Self::MonthDay{month, day : _} => Some(month),
+            Self::WeekDay{week : _, day : _} => None,
+        }
+    }
+}
+
+impl Week for Date {
+    fn week(&self) -> Option<u8> {
+        match *self {
+            Self::MonthWeekDay{month : _, week, day : _} => Some(week),
+            Self::MonthDay{month : _, day : _} => None,
+            Self::WeekDay{week, day : _} => Some(week),
+        }
+    }
+}
+
+// MWD and WD are day of the week
+// MD is day of the month
+impl Day for Date {
+    fn day(&self) -> Option<u8> {
+        match *self {
+            Self::MonthWeekDay{month : _, week : _, day} => Some(day),
+            Self::MonthDay{month : _, day} => Some(day),
+            Self::WeekDay{week : _, day} => Some(day),
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct DateTimeConfig {
-    month_week_days : Vec<MonthWeekDay>,
-    month_days : Vec<MonthDay>,
-    week_days : Vec<WeekDay>,
-    start_hour : u8,  // 24 hour time 
-    stop_hour : u8,
+    dates : Vec<Date>,
+    start_hour : Option<u8>,  // 24 hour time 
+    stop_hour : Option<u8>,
+}
+
+impl<'a> DateTimeConfig { 
+    pub fn dates(&'a self) -> &'a Vec<Date> {
+        &self.dates
+    }
+
+    pub fn start_hour(&self) -> u8 {
+        self.start_hour.unwrap_or(0)
+    }
+
+    pub fn stop_hour(&self) -> u8 {
+        self.stop_hour.unwrap_or(0)
+    }
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
     shared_dir : Option<String>,
-    blacklist_times : Option<DateTimeConfig>,
+    blacklist : Option<DateTimeConfig>,
     event_handler : Option<EventHandlerConfig>,
     recorder : RecorderConfig,
 }
@@ -91,6 +162,7 @@ impl Config {
             .and_then(|mut f| f.read_to_string(&mut config_file))?;
        
         let config : Config = toml::from_str(config_file.as_str())?; 
+        
         Ok(config)
     }
        
@@ -103,31 +175,16 @@ impl Config {
         Ok(share_dir.to_owned())
     }
     
-    pub fn blacklists(&self) -> DateTimeConfig {
-        self.blacklist_times.clone().unwrap_or_default()
+    pub fn blacklists_dates(&self) -> DateTimeConfig {
+        self.blacklist.clone().unwrap_or_default()
     }
-    
-/*
-    pub fn proc_names<'a>(&'a self) -> &'a Vec<String> {
-        &self.proc_names
-    }
-
-    pub fn dates<'a>(&'a self) -> &'a Vec<Datetime> {
-        &self.dates
+ 
+    pub fn event_handler_config(&self) -> EventHandlerConfig {
+        self.event_handler.clone().unwrap_or_default()
     }
 
-    pub fn start_hour(&self) -> u8 {
-        self.start_hour
+    pub fn recorder_config(&self) -> RecorderConfig {
+        self.recorder.clone()
     }
-
-    pub fn stop_hour(&self) -> u8 {
-        self.stop_hour
-    }
-
-    pub fn min_sec(&self) -> u8 {
-        self.min_sec
-    }
-*/
-
 }
 
