@@ -1,4 +1,3 @@
-
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
@@ -11,37 +10,22 @@ use serde_derive::Deserialize;
 
 use thiserror::Error;
 
-const DEFAULT_SHARE : &str = "/.local/share/Septem/";
-const DEFAULT_CONFIG : &str = "/.config/Septem/septem.toml";
+const DEFAULT_SHARE: &str = "/.local/share/Septem/";
+const DEFAULT_CONFIG: &str = "/.config/Septem/septem.toml";
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("Failed to retrieve env HOME:\n{0}")]
     EnvError(#[from] env::VarError),
-    
+
     #[error("Failed to find or read config file:\n{0}")]
     FileIOError(#[from] io::Error),
 
     #[error("Toml-rs failed to parse the config file:\n{0}")]
     TomlError(#[from] toml::de::Error),
-    
-    #[error("You're Still Here? It's Over, Go Home.")]
-    UnknownError,
 }
 
-trait Month {
-    fn month(&self) -> Option<u8>;
-}
-
-trait Week {
-    fn week(&self) -> Option<u8>;
-}
-
-trait Day {
-    fn day(&self) -> Option<u8>;
-}
-
-/* 
+/*
  * TODO:
  *
  * Alert System Configurations
@@ -51,7 +35,7 @@ trait Day {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct EventHandlerConfig {
-    min_focus_time : u8,
+    min_focus_time: u8,
 }
 
 impl EventHandlerConfig {
@@ -62,21 +46,21 @@ impl EventHandlerConfig {
 
 impl Default for EventHandlerConfig {
     fn default() -> Self {
-        Self { min_focus_time : 10 }
+        Self { min_focus_time: 10 }
     }
 }
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RecorderConfig {
-    productive : Vec<String>,
-    unproductive : Vec<String>,
+    productive: Vec<String>,
+    unproductive: Vec<String>,
 }
 
-impl<'a> RecorderConfig { 
+impl<'a> RecorderConfig {
     pub fn productive(&'a self) -> &'a Vec<String> {
         &self.productive
     }
-    
+
     pub fn unproductive(&'a self) -> &'a Vec<String> {
         &self.unproductive
     }
@@ -85,51 +69,59 @@ impl<'a> RecorderConfig {
 #[derive(Clone, Deserialize, Debug)]
 #[serde(untagged)]
 pub enum Date {
-    MonthWeekDay{month : u8, week : u8, day : u8},
-    MonthDay{month : u8, day : u8},
-    WeekDay{week : u8, day : u8},
+    MonthWeekDay { month: u8, week: u8, day: u8 },
+    MonthDay { month: u8, day: u8 },
+    WeekDay { week: u8, day: u8 },
 }
 
-impl Month for Date {
+impl Date {
     fn month(&self) -> Option<u8> {
         match *self {
-            Self::MonthWeekDay{month, week : _, day : _} => Some(month),
-            Self::MonthDay{month, day : _} => Some(month),
-            Self::WeekDay{week : _, day : _} => None,
+            Self::MonthWeekDay {
+                month,
+                week: _,
+                day: _,
+            } => Some(month),
+            Self::MonthDay { month, day: _ } => Some(month),
+            Self::WeekDay { week: _, day: _ } => None,
         }
     }
-}
 
-impl Week for Date {
     fn week(&self) -> Option<u8> {
         match *self {
-            Self::MonthWeekDay{month : _, week, day : _} => Some(week),
-            Self::MonthDay{month : _, day : _} => None,
-            Self::WeekDay{week, day : _} => Some(week),
+            Self::MonthWeekDay {
+                month: _,
+                week,
+                day: _,
+            } => Some(week),
+            Self::MonthDay { month: _, day: _ } => None,
+            Self::WeekDay { week, day: _ } => Some(week),
         }
     }
-}
 
-// MWD and WD are day of the week
-// MD is day of the month
-impl Day for Date {
+    // MWD and WD are day of the week
+    // MD is day of the month
     fn day(&self) -> Option<u8> {
         match *self {
-            Self::MonthWeekDay{month : _, week : _, day} => Some(day),
-            Self::MonthDay{month : _, day} => Some(day),
-            Self::WeekDay{week : _, day} => Some(day),
+            Self::MonthWeekDay {
+                month: _,
+                week: _,
+                day,
+            } => Some(day),
+            Self::MonthDay { month: _, day } => Some(day),
+            Self::WeekDay { week: _, day } => Some(day),
         }
     }
 }
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct DateTimeConfig {
-    dates : Vec<Date>,
-    start_hour : Option<u8>,  // 24 hour time 
-    stop_hour : Option<u8>,
+    dates: Vec<Date>,
+    start_hour: Option<u8>, // 24 hour time
+    stop_hour: Option<u8>,
 }
 
-impl<'a> DateTimeConfig { 
+impl<'a> DateTimeConfig {
     pub fn dates(&'a self) -> &'a Vec<Date> {
         &self.dates
     }
@@ -145,40 +137,40 @@ impl<'a> DateTimeConfig {
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    shared_dir : Option<String>,
-    blacklist : Option<DateTimeConfig>,
-    event_handler : Option<EventHandlerConfig>,
-    recorder : RecorderConfig,
+    shared_dir: Option<String>,
+    blacklist: Option<DateTimeConfig>,
+    event_handler: Option<EventHandlerConfig>,
+    recorder: RecorderConfig,
 }
 
 impl Config {
-
-    // Temp default solution
-    pub fn new() -> Result<Config, ConfigError> {
-        let home = env::var("HOME")?;
-        let mut config_file = String::new();
-        
-        File::open(home + DEFAULT_CONFIG)
-            .and_then(|mut f| f.read_to_string(&mut config_file))?;
-       
-        let config : Config = toml::from_str(config_file.as_str())?; 
-        
-        Ok(config)
-    }
-       
-    pub fn shared_dir(&self) -> Result<String, ConfigError> {
-        let mut home_share = env::var("HOME")?;
-        home_share += DEFAULT_SHARE;
-        
-        let share_dir = self.shared_dir.clone().unwrap_or(home_share);
-
-        Ok(share_dir.to_owned())
-    }
     
+    // Temp default solution
+    pub fn new(c : Option<String> ) -> Result<Config, ConfigError> {
+        let config_path = match c {
+            Some(s) => s,
+            None => env::var("HOME")? + DEFAULT_CONFIG,
+        };
+        
+        let mut config_contents = String::new();
+
+        File::open(config_path).and_then(|mut f| f.read_to_string(&mut config_contents))?;
+
+        Ok(toml::from_str(config_contents.as_str())?)
+    }
+
+    pub fn shared_dir(&self) -> Result<String, ConfigError> {
+        let share_dir = self.shared_dir.clone();
+        match share_dir {
+            Some(s) => Ok(s.to_owned()),
+            None => Ok(env::var("HOME")? + DEFAULT_SHARE),
+        }
+    }
+
     pub fn blacklists_dates(&self) -> DateTimeConfig {
         self.blacklist.clone().unwrap_or_default()
     }
- 
+
     pub fn event_handler_config(&self) -> EventHandlerConfig {
         self.event_handler.clone().unwrap_or_default()
     }
@@ -187,4 +179,3 @@ impl Config {
         self.recorder.clone()
     }
 }
-
