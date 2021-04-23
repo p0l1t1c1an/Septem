@@ -144,14 +144,13 @@ pub struct Config {
 }
 
 impl Config {
-    
     // Temp default solution
-    pub fn new(c : Option<String> ) -> Result<Config, ConfigError> {
+    pub fn new(c: Option<String>) -> Result<Config, ConfigError> {
         let config_path = match c {
             Some(s) => s,
             None => env::var("HOME")? + DEFAULT_CONFIG,
         };
-        
+
         let mut config_contents = String::new();
 
         File::open(config_path).and_then(|mut f| f.read_to_string(&mut config_contents))?;

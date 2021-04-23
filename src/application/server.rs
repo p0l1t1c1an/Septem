@@ -1,8 +1,6 @@
 #[allow(dead_code)]
 #[allow(unused_variables)]
-use crate::application::{
-    event_handler::EventError, process, recorder::RecorderError,
-};
+use crate::application::{event_handler::EventError, process, recorder::RecorderError};
 
 use async_trait::async_trait;
 use std::time::SystemTime;
