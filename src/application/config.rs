@@ -47,9 +47,9 @@ impl EventHandlerConfig {
 
 impl Default for EventHandlerConfig {
     fn default() -> Self {
-        Self { 
+        Self {
             min_focus_time: 10,
-            delay : 3,
+            delay: 3,
         }
     }
 }

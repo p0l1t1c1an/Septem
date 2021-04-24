@@ -1,9 +1,13 @@
 #[allow(dead_code)]
 #[allow(unused_variables)]
-use crate::application::{event_handler::{EventHandler, EventError}, process, recorder::{Recorder, RecorderError}};
+use crate::application::{
+    event_handler::{EventError, EventHandler},
+    process,
+    recorder::{Recorder, RecorderError},
+};
 
-use std::time::SystemTime;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use tokio::task::JoinHandle;
 
@@ -32,7 +36,7 @@ pub enum Client {
 }
 
 pub struct Server {
-    clients : Vec<Client>,
+    clients: Vec<Client>,
 }
 
 impl Client {
@@ -45,18 +49,15 @@ impl Client {
     }
 }
 
-
 impl Server {
-    pub fn new(v : Vec<Client>) -> Self {
-        Self {
-            clients : v,
-        }
+    pub fn new(v: Vec<Client>) -> Self {
+        Self { clients: v }
     }
 
     pub async fn start_clients(self) -> JoinClients<()> {
         let mut handles = Vec::new();
         for client in self.clients.into_iter() {
-           handles.push(tokio::spawn(client.start()));
+            handles.push(tokio::spawn(client.start()));
         }
         handles
     }

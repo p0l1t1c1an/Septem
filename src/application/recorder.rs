@@ -3,11 +3,14 @@
 use crate::application::process;
 use process::{Process, ProcessError};
 
-use std::{collections::HashMap, sync::{Arc, Mutex}};
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::time::SystemTime;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use csv::{ReaderBuilder, WriterBuilder};
 use serde_derive::{Deserialize, Serialize};
@@ -25,7 +28,7 @@ pub enum RecorderError {
 
     #[error("{0}")]
     CsvError(#[from] csv::Error),
-    
+
     #[error("{0}")]
     FileError(#[from] std::io::Error),
 }
@@ -69,7 +72,7 @@ impl Recorder {
     fn parse_data(share: &String) -> RecorderResult<HashMap<String, u64>> {
         let path = Path::new(share);
         let data = path.join(DATA_FILE);
-    
+
         if data.exists() {
             let reader = ReaderBuilder::new().from_path(data)?;
             let mut map = HashMap::new();
@@ -110,7 +113,7 @@ impl Recorder {
         })
     }
 
-    pub async fn start(self, pid : Arc<Mutex<u32>>) -> RecorderResult<()> {
+    pub async fn start(self, pid: Arc<Mutex<u32>>) -> RecorderResult<()> {
         Ok(())
     }
 }

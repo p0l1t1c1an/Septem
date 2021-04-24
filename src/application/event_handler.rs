@@ -91,18 +91,20 @@ impl EventHandler {
 
     // TODO set up so that it can async check if min_time has pass before updating
     // (sending that new window has been focused)
-    pub async fn start(mut self, pid : Arc<Mutex<u32>>) -> Result<(), EventError> {
+    pub async fn start(mut self, pid: Arc<Mutex<u32>>) -> Result<(), EventError> {
         loop {
             {
-                if false { break; }
+                if false {
+                    break;
+                }
                 println!("Start!");
-                
+
                 tokio::time::sleep(self.delay).await;
                 self.event = None;
-                
+
                 let polled = self.conn.poll_for_event();
                 match polled {
-                    None => { 
+                    None => {
                         self.conn.has_error()?;
                     }
                     Some(e) => {
@@ -119,8 +121,9 @@ impl EventHandler {
                                 let active =
                                     xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
                                         .get_reply()?;
-                                self.event =
-                                    Some(xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?);
+                                self.event = Some(
+                                    xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?,
+                                );
                                 println!("pid: {}", self.event.unwrap());
                             }
                         }

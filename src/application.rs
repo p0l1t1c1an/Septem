@@ -4,7 +4,7 @@ mod process;
 mod recorder;
 pub mod server;
 
-use event_handler::{EventHandler, EventError};
+use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use server::{ClientError, Server};
 
@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum AppError {  
+pub enum AppError {
     #[error("{0}")]
     JoinAllError(#[from] JoinError),
 
@@ -30,11 +30,10 @@ pub enum AppError {
     StartUpEventError(#[from] EventError),
 }
 
-type AppResult<T> = Result<T, AppError>; 
-
+type AppResult<T> = Result<T, AppError>;
 
 pub async fn init() -> AppResult<Server> {
-    let r = Recorder::new("/usr/home/p0l1t1c1an/.local/share/Septem".to_owned()).await?; 
+    let r = Recorder::new("/usr/home/p0l1t1c1an/.local/share/Septem".to_owned()).await?;
     let e = EventHandler::new(10)?;
     let p = Arc::new(Mutex::new(0));
 
@@ -44,7 +43,7 @@ pub async fn init() -> AppResult<Server> {
     Ok(Server::new(v))
 }
 
-pub async fn start(server : Server) -> Result<(), AppError> { 
+pub async fn start(server: Server) -> Result<(), AppError> {
     let join_clients = server.start_clients().await;
     let errors = try_join_all(join_clients).await?;
     for e in errors.into_iter() {
