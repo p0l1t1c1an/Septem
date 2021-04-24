@@ -5,6 +5,7 @@ use process::{Process, ProcessError};
 
 use std::{collections::HashMap, sync::{Arc, Mutex}};
 use std::fs::File;
+use std::io::prelude::*;
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -55,7 +56,8 @@ impl Recorder {
     fn create_date(path: &Path) -> RecorderResult<()> {
         if path.is_dir() {
             let data = path.join(DATA_FILE);
-            File::create(data)?;
+            let mut f = File::create(data)?;
+            f.write_all(b"process_name,time_focused")?;
             Ok(())
         } else {
             Err(RecorderError::PathDoesNotExistError(
@@ -67,6 +69,7 @@ impl Recorder {
     fn parse_data(share: &String) -> RecorderResult<HashMap<String, u64>> {
         let path = Path::new(share);
         let data = path.join(DATA_FILE);
+    
         if data.exists() {
             let reader = ReaderBuilder::new().from_path(data)?;
             let mut map = HashMap::new();
