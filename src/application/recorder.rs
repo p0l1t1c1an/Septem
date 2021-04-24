@@ -3,7 +3,7 @@
 use crate::application::process;
 use process::{Process, ProcessError};
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 use std::fs::File;
 use std::path::Path;
 use std::time::SystemTime;
@@ -24,12 +24,15 @@ pub enum RecorderError {
 
     #[error("{0}")]
     CsvError(#[from] csv::Error),
+    
+    #[error("{0}")]
+    FileError(#[from] std::io::Error),
 }
 
 pub type RecorderResult<T> = Result<T, RecorderError>;
 
-// Data type to be stored in Recorder's hashmap
-// and broken into the data file
+// Data type to be broken up as Recorder's hashmap
+// and stored within the data file
 #[derive(Debug, Deserialize, Serialize)]
 struct Data {
     process_name: String,
@@ -52,7 +55,7 @@ impl Recorder {
     fn create_date(path: &Path) -> RecorderResult<()> {
         if path.is_dir() {
             let data = path.join(DATA_FILE);
-            File::create(data);
+            File::create(data)?;
             Ok(())
         } else {
             Err(RecorderError::PathDoesNotExistError(
@@ -102,5 +105,9 @@ impl Recorder {
             start_time: SystemTime::now(),
             proc_times: Recorder::parse_data(&share)?,
         })
+    }
+
+    pub async fn start(self, pid : Arc<Mutex<u32>>) -> RecorderResult<()> {
+        Ok(())
     }
 }

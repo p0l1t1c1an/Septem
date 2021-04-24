@@ -1,14 +1,8 @@
 mod application;
-use application::event_handler::EventHandler;
-
-use std::error::Error;
+use application::AppError;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let handler = EventHandler::new(5)?;
-
-    let thread = tokio::spawn(handler.start());
-    let _ = thread.await?;
-
+async fn main() -> Result<(), AppError> {
+    application::start(application::init().await?).await?;
     Ok(())
 }

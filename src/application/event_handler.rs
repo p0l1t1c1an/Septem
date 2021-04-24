@@ -1,6 +1,8 @@
 use crate::application::process;
 use process::Process;
 
+use std::sync::{Arc, Mutex};
+
 use xcb::{ConnError, GenericError, GenericEvent};
 use xcb_util::ewmh;
 
@@ -9,7 +11,7 @@ use tokio::time::Duration;
 
 #[derive(Error, Debug)]
 pub enum EventError {
-    #[error("Failed to establish connection to the X11 server")]
+    #[error("Connection to the X11 server failed to start or shutdown")]
     ConnectionError(#[from] ConnError),
 
     #[error("Failed to find screen with id: {0}")]
@@ -32,10 +34,11 @@ impl From<GenericError> for EventError {
 type EventResult<T> = Result<T, EventError>;
 
 pub struct EventHandler {
-    event: u32,
+    event: Option<u32>,
     conn: ewmh::Connection,
     screen_id: i32,
     min_time: Duration,
+    delay: Duration,
     active_win: u32,
     wm_name: u32,
     vis_name: u32,
@@ -74,10 +77,11 @@ impl EventHandler {
         let cd = ewmh.CURRENT_DESKTOP();
 
         Ok(EventHandler {
-            event: 0,
+            event: None,
             conn: ewmh,
             screen_id: screen,
             min_time: Duration::from_secs(sec),
+            delay: Duration::from_millis(1500),
             active_win: aw,
             wm_name: wm,
             vis_name: vn,
@@ -87,14 +91,19 @@ impl EventHandler {
 
     // TODO set up so that it can async check if min_time has pass before updating
     // (sending that new window has been focused)
-    pub async fn start(mut self) -> Result<(), EventError> {
+    pub async fn start(mut self, pid : Arc<Mutex<u32>>) -> Result<(), EventError> {
         loop {
             {
-                let polled = self.conn.wait_for_event();
-
+                if false { break; }
+                println!("Start!");
+                
+                tokio::time::sleep(self.delay).await;
+                self.event = None;
+                
+                let polled = self.conn.poll_for_event();
                 match polled {
-                    None => {
-                        break; // Catch and return error
+                    None => { 
+                        self.conn.has_error()?;
                     }
                     Some(e) => {
                         let r = e.response_type() & !0x80;
@@ -111,17 +120,19 @@ impl EventHandler {
                                     xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
                                         .get_reply()?;
                                 self.event =
-                                    xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?;
-                                println!("pid: {}", self.event);
+                                    Some(xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?);
+                                println!("pid: {}", self.event.unwrap());
                             }
                         }
                     }
                 }
             }
 
-            let proc = Process::new(self.event as i32).await;
-            if proc.is_ok() {
-                println!("Application Process name: {}", proc.unwrap().name);
+            if let Some(e) = self.event {
+                let proc = Process::new(e as i32).await;
+                if proc.is_ok() {
+                    println!("Application Process name: {}", proc.unwrap().name);
+                }
             }
         }
 
