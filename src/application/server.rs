@@ -6,7 +6,7 @@ use crate::application::{
     recorder::{Recorder, RecorderError},
 };
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 use std::time::SystemTime;
 
 use tokio::task::JoinHandle;
@@ -24,7 +24,7 @@ pub enum ClientError {
 
 pub type ClientResult<T> = Result<T, ClientError>;
 
-type PidMutex = Arc<Mutex<u32>>;
+type PidMutex = Arc<(Mutex<u32>, Condvar)>;
 type ProcessMutex = Arc<Mutex<process::Process>>;
 type TimeMutex = Arc<Mutex<SystemTime>>;
 

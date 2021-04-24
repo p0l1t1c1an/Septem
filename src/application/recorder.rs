@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::SystemTime;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Condvar},
 };
 
 use csv::{ReaderBuilder, WriterBuilder};
@@ -113,7 +113,22 @@ impl Recorder {
         })
     }
 
-    pub async fn start(self, pid: Arc<Mutex<u32>>) -> RecorderResult<()> {
-        Ok(())
+    pub async fn start(mut self, pid_cond: Arc<(Mutex<u32>, Condvar)>) -> RecorderResult<()> { 
+        loop {
+            {
+                let (pid, cond) = &*pid_cond;
+                let mut p = pid.lock().unwrap();
+                p = cond.wait(p).unwrap();
+
+                self.curr_proc = Process::new(*p as i32)?;
+            }
+            let elapsed_time = self.start_time.elapsed().unwrap();
+            self.start_time = SystemTime::now();
+ 
+            println!("Application Process name: {}\nTime on Application: {}", 
+                self.curr_proc.name, elapsed_time.as_secs());
+        }
+
+        //Ok(())
     }
 }

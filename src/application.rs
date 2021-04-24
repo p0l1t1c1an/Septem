@@ -6,12 +6,12 @@ pub mod server;
 
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
-use server::{ClientError, Server};
+use server::{Client, ClientError, Server};
 
 use futures::future::try_join_all;
 use tokio::task::JoinError;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 
 use thiserror::Error;
 
@@ -35,10 +35,13 @@ type AppResult<T> = Result<T, AppError>;
 pub async fn init() -> AppResult<Server> {
     let r = Recorder::new("/usr/home/p0l1t1c1an/.local/share/Septem".to_owned()).await?;
     let e = EventHandler::new(10)?;
-    let p = Arc::new(Mutex::new(0));
+    
+    let pid = Arc::new((Mutex::new(0), Condvar::new()));
+    let pid_clone = Arc::clone(&pid);
 
     let mut v = Vec::new();
-    v.push(server::Client::EventClient(p, e));
+    v.push(Client::EventClient(pid, e));
+    v.push(Client::RecorderClient(pid_clone, r));
 
     Ok(Server::new(v))
 }
