@@ -36,6 +36,7 @@ pub enum ConfigError {
 #[derive(Clone, Deserialize, Debug)]
 pub struct EventHandlerConfig {
     min_focus_time: u8,
+    delay: u8,
 }
 
 impl EventHandlerConfig {
@@ -46,7 +47,10 @@ impl EventHandlerConfig {
 
 impl Default for EventHandlerConfig {
     fn default() -> Self {
-        Self { min_focus_time: 10 }
+        Self {
+            min_focus_time: 10,
+            delay: 3,
+        }
     }
 }
 
@@ -144,18 +148,16 @@ pub struct Config {
 }
 
 impl Config {
-    
     // Temp default solution
-    pub fn new(c : Option<String> ) -> Result<Config, ConfigError> {
+    pub fn new(c: Option<String>) -> Result<Config, ConfigError> {
         let config_path = match c {
             Some(s) => s,
             None => env::var("HOME")? + DEFAULT_CONFIG,
         };
-        
+
         let mut config_contents = String::new();
 
         File::open(config_path).and_then(|mut f| f.read_to_string(&mut config_contents))?;
-
         Ok(toml::from_str(config_contents.as_str())?)
     }
 

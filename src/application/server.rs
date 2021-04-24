@@ -1,34 +1,20 @@
 #[allow(dead_code)]
 #[allow(unused_variables)]
 use crate::application::{
-    event_handler::EventError, process, recorder::RecorderError,
+    event_handler::{EventError, EventHandler},
+    process,
+    recorder::{Recorder, RecorderError},
 };
 
-use async_trait::async_trait;
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
-use tokio::sync::{mpsc, watch};
+
+use tokio::task::JoinHandle;
 
 use thiserror::Error;
 
-/*
- * TODO:
- *
- * Then, it should have one for each threads
- * own errors.
- *
- */
-
 #[derive(Error, Debug)]
-pub enum ClientServerError {
-    #[error("The client {0} was requested data it doesn't have")]
-    IncorrectDataRequest(u8, Data),
-
-    #[error("The request to client {0} timed out")]
-    TimeoutError(u8),
-
-    #[error("The request to the server timed out")]
-    ServerTimeoutError,
-
+pub enum ClientError {
     #[error("{0}")]
     RecorderClientError(#[from] RecorderError),
 
@@ -36,65 +22,43 @@ pub enum ClientServerError {
     EventClientError(#[from] EventError),
 }
 
-pub type ClientServerResult<T> = Result<T, ClientServerError>;
+pub type ClientResult<T> = Result<T, ClientError>;
 
-// There are more data things
-// But I just can't think of them
-#[derive(Debug)]
-pub enum Data {
-    GetCurrProc,
-    ReturnCurrProc(process::Process),
+type PidMutex = Arc<Mutex<u32>>;
+type ProcessMutex = Arc<Mutex<process::Process>>;
+type TimeMutex = Arc<Mutex<SystemTime>>;
 
-    GetCurrProcStart,
-    ReturnCurrProcStart(SystemTime),
+type JoinClients<T> = Vec<JoinHandle<ClientResult<T>>>;
 
-    Interupt(u32),
-    Shutdown,
+pub enum Client {
+    RecorderClient(PidMutex, Recorder),
+    EventClient(PidMutex, EventHandler),
 }
 
-pub enum Message {
-    GetFromServer { from: u8 }, // Client to Server
-    GetFromClient { to: u8 },   // Server to Client
-
-    ReturnToServer { data: Data },
-    ReturnToClient { to: u8, data: Data },
-
-    SendToClient { to: u8, data: Data },
-
-    Shutdown { data: Data }, // Tell clients to shutdown
+pub struct Server {
+    clients: Vec<Client>,
 }
 
-/*
- * TODO:
- *
- * It should run tokio spawn on each start for a client.
- * Then, use join! macro to combine handle and return.
- *
- */
-
-#[async_trait]
-pub trait Client {
-    fn for_me(&self, to: u8) -> bool;
-
-    async fn handle_message(&self, message: Message) -> ClientServerResult<()>;
-
-    async fn start(
-        self,
-        id: u8,
-        sender: mpsc::Sender<Message>,
-        receiver: watch::Receiver<Message>,
-    ) -> ClientServerResult<()>;
+impl Client {
+    pub async fn start(self) -> ClientResult<()> {
+        match self {
+            Client::RecorderClient(p, r) => r.start(p).await?,
+            Client::EventClient(p, e) => e.start(p).await?,
+        }
+        Ok(())
+    }
 }
 
-#[async_trait]
-pub trait Server {
-    async fn handle_message(&self, message: Message) -> ClientServerResult<()>;
+impl Server {
+    pub fn new(v: Vec<Client>) -> Self {
+        Self { clients: v }
+    }
 
-    async fn start_clients(&self, clients: Vec<Box<dyn Client>>) -> ClientServerResult<()>;
-
-    async fn start(
-        &self,
-        sender: watch::Sender<Message>,
-        receiver: mpsc::Receiver<Message>,
-    ) -> ClientServerResult<()>;
+    pub async fn start_clients(self) -> JoinClients<()> {
+        let mut handles = Vec::new();
+        for client in self.clients.into_iter() {
+            handles.push(tokio::spawn(client.start()));
+        }
+        handles
+    }
 }
