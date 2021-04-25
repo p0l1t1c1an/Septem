@@ -106,7 +106,7 @@ impl Recorder {
 
     pub fn new(share: String) -> RecorderResult<Recorder> {
         Ok(Recorder {
-            share_dir: share.clone(),
+            share_dir: share.to_owned(),
             prev_proc: None,
             curr_proc: None,
             start_time: SystemTime::now(),

@@ -33,7 +33,7 @@ pub enum AppError {
 type AppResult<T> = Result<T, AppError>;
 
 pub async fn init() -> AppResult<Server> {
-    let r = Recorder::new("/usr/home/p0l1t1c1an/.local/share/Septem".to_owned()).await?;
+    let r = Recorder::new("/usr/home/p0l1t1c1an/.local/share/Septem".to_owned())?;
     let e = EventHandler::new()?;
     
     let pid = Arc::new((Mutex::new(0), Condvar::new()));
