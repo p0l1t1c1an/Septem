@@ -1,13 +1,10 @@
-use crate::application::process;
-use process::Process;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
-use xcb::{ConnError, GenericError, GenericEvent};
+use xcb::{ConnError, GenericError};
 use xcb_util::ewmh;
 
 use thiserror::Error;
-use tokio::time::Duration;
 
 #[derive(Error, Debug)]
 pub enum EventError {
@@ -22,6 +19,9 @@ pub enum EventError {
         "Failed either the mask change, EWMH connection, or active window. \nError Code is {1}"
     )]
     GenericXcbError(GenericError, u8),
+
+    #[error("The pid mutex failed to load")]
+    PosionedMutexError,
 }
 
 impl From<GenericError> for EventError {
@@ -37,8 +37,6 @@ pub struct EventHandler {
     event: Option<u32>,
     conn: ewmh::Connection,
     screen_id: i32,
-    min_time: Duration,
-    delay: Duration,
     active_win: u32,
     wm_name: u32,
     vis_name: u32,
@@ -68,7 +66,7 @@ impl EventHandler {
         Ok((ewmh, screen_id))
     }
 
-    pub fn new(sec: u64) -> EventResult<EventHandler> {
+    pub fn new() -> EventResult<EventHandler> {
         let (ewmh, screen) = Self::establish_conn()?;
 
         let aw = ewmh.ACTIVE_WINDOW();
@@ -80,8 +78,6 @@ impl EventHandler {
             event: None,
             conn: ewmh,
             screen_id: screen,
-            min_time: Duration::from_secs(sec),
-            delay: Duration::from_millis(1500),
             active_win: aw,
             wm_name: wm,
             vis_name: vn,
@@ -89,23 +85,14 @@ impl EventHandler {
         })
     }
 
-    // TODO set up so that it can async check if min_time has pass before updating
-    // (sending that new window has been focused)
-    pub async fn start(mut self, pid: Arc<Mutex<u32>>) -> Result<(), EventError> {
+    pub async fn start(mut self, pid_cond: Arc<(Mutex<u32>,Condvar)>) -> Result<(), EventError> {
         loop {
             {
-                if false {
-                    break;
-                }
-                println!("Start!");
-
-                tokio::time::sleep(self.delay).await;
                 self.event = None;
-
-                let polled = self.conn.poll_for_event();
+                let polled = self.conn.wait_for_event();
                 match polled {
                     None => {
-                        self.conn.has_error()?;
+                        break;
                     }
                     Some(e) => {
                         let r = e.response_type() & !0x80;
@@ -116,25 +103,24 @@ impl EventHandler {
                             if atom == self.active_win
                                 || atom == self.wm_name
                                 || atom == self.vis_name
-                                || atom == self.curr_desk
+                              //  || atom == self.curr_desk
                             {
                                 let active =
                                     xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
                                         .get_reply()?;
-                                self.event = Some(
-                                    xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?,
-                                );
-                                println!("pid: {}", self.event.unwrap());
+                                {
+                                    let (pid, cond) = &*pid_cond;
+
+                                    match pid.lock() {
+                                        Ok(mut p) => *p = xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?,
+                                        Err(_) => Err(EventError::PosionedMutexError)?,
+                                    }
+                                    
+                                    cond.notify_one();
+                                }
                             }
                         }
                     }
-                }
-            }
-
-            if let Some(e) = self.event {
-                let proc = Process::new(e as i32).await;
-                if proc.is_ok() {
-                    println!("Application Process name: {}", proc.unwrap().name);
                 }
             }
         }

@@ -35,7 +35,7 @@ pub struct Process {
 unsafe impl Send for Process {}
 
 impl Process {
-    pub async fn new(p: pid_t) -> Result<Process, ProcessError> {
+    pub fn new(p: pid_t) -> Result<Process, ProcessError> {
         let mut proc = Process {
             pid: p,
             name: String::new(),
