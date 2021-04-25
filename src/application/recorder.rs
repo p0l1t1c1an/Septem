@@ -9,7 +9,10 @@ use std::path::Path;
 use std::time::SystemTime;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, Condvar},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Condvar, Mutex,
+    },
 };
 
 use csv::{ReaderBuilder, WriterBuilder};
@@ -52,10 +55,10 @@ pub struct Recorder {
 }
 
 impl Recorder {
-    fn add_data(&mut self, data : Data) {
+    fn add_data(&mut self, data: Data) {
         match self.proc_times.get_mut(&data.process_name) {
             Some(t) => *t += data.time_focused,
-            None => { 
+            None => {
                 self.proc_times.insert(data.process_name, data.time_focused);
                 ()
             }
@@ -93,8 +96,9 @@ impl Recorder {
         }
     }
 
-    fn write_data(&self, share: &String) -> RecorderResult<()> {
-        let mut writer = WriterBuilder::new().from_path(Path::new(share).join(DATA_FILE))?;
+    fn write_data(&self) -> RecorderResult<()> {
+        let mut writer =
+            WriterBuilder::new().from_path(Path::new(&self.share_dir).join(DATA_FILE))?;
         for (name, time) in self.proc_times.clone().into_iter() {
             writer.serialize(Data {
                 process_name: name,
@@ -114,34 +118,42 @@ impl Recorder {
         })
     }
 
-    pub async fn start(mut self, pid_cond: Arc<(Mutex<u32>, Condvar)>) -> RecorderResult<()> { 
-        loop {
-            {
-                let (pid, cond) = &*pid_cond;
-                let mut p = pid.lock().unwrap();
-                p = cond.wait(p).unwrap();
-                
-                self.prev_proc = self.curr_proc;
-                self.curr_proc = Some(Process::new(*p as i32)?);
-            }
+    async fn wait_for_event(&mut self, pid: &Mutex<u32>, cond: &Condvar) -> RecorderResult<()> {
+        let mut p = pid.lock().unwrap();
+        p = cond.wait(p).unwrap();
+
+        self.prev_proc = self.curr_proc.clone();
+        self.curr_proc = Some(Process::new(*p as i32)?);
+
+        Ok(())
+    }
+
+    pub async fn start(
+        mut self,
+        pid_cond: Arc<(Mutex<u32>, Condvar)>,
+        shutdown: Arc<AtomicBool>,
+    ) -> RecorderResult<()> {
+        while !shutdown.load(Ordering::Relaxed) {
+            let (pid, cond) = &*pid_cond;
+            self.wait_for_event(pid, cond).await?;
 
             if let Some(p) = self.prev_proc.clone() {
                 let elapsed = self.start_time.elapsed().unwrap().as_secs();
                 if elapsed >= 1 {
-                    self.add_data( Data {
-                        process_name : p.name,
-                        time_focused : elapsed,
+                    self.add_data(Data {
+                        process_name: p.name,
+                        time_focused: elapsed,
                     });
                 }
             }
-            
+
             for (proc, time) in &self.proc_times {
                 println!("{}: {}", proc, time);
             }
 
             self.start_time = SystemTime::now();
         }
-        
-        //Ok(())
+
+        Ok(())
     }
 }
