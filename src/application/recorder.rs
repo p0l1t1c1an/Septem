@@ -45,18 +45,24 @@ struct Data {
 
 pub struct Recorder {
     share_dir: String,
-    curr_proc: Process,
+    prev_proc: Option<Process>,
+    curr_proc: Option<Process>,
     start_time: SystemTime,
     proc_times: HashMap<String, u64>,
 }
 
-// These should be an Arc of a Process and Arc of a SystemTime.
-// They will be stored in application's startup process.
-// Then, ewmh thread can update PID and the Arcs get reset
-// in both the Recorder and Alert threads.
-
 impl Recorder {
-    fn create_date(path: &Path) -> RecorderResult<()> {
+    fn add_data(&mut self, data : Data) {
+        match self.proc_times.get_mut(&data.process_name) {
+            Some(t) => *t += data.time_focused,
+            None => { 
+                self.proc_times.insert(data.process_name, data.time_focused);
+                ()
+            }
+        }
+    }
+
+    fn create_data(path: &Path) -> RecorderResult<()> {
         if path.is_dir() {
             let data = path.join(DATA_FILE);
             let mut f = File::create(data)?;
@@ -82,7 +88,7 @@ impl Recorder {
             }
             Ok(map)
         } else {
-            Recorder::create_date(path)?;
+            Recorder::create_data(path)?;
             Ok(HashMap::new())
         }
     }
@@ -98,16 +104,11 @@ impl Recorder {
         Ok(())
     }
 
-    // Will need to be thread that rw a data file
-    // Then passed in atomic pid_t to generate a new Process when updated.
-    // Need some way to poll when the variable changes. (Or a better method all-around)
-    pub async fn new(share: String) -> RecorderResult<Recorder> {
+    pub fn new(share: String) -> RecorderResult<Recorder> {
         Ok(Recorder {
             share_dir: share.clone(),
-            curr_proc: Process {
-                pid: 0,
-                name: String::new(),
-            },
+            prev_proc: None,
+            curr_proc: None,
             start_time: SystemTime::now(),
             proc_times: Recorder::parse_data(&share)?,
         })
@@ -119,16 +120,28 @@ impl Recorder {
                 let (pid, cond) = &*pid_cond;
                 let mut p = pid.lock().unwrap();
                 p = cond.wait(p).unwrap();
-
-                self.curr_proc = Process::new(*p as i32)?;
+                
+                self.prev_proc = self.curr_proc;
+                self.curr_proc = Some(Process::new(*p as i32)?);
             }
-            let elapsed_time = self.start_time.elapsed().unwrap();
-            self.start_time = SystemTime::now();
- 
-            println!("Application Process name: {}\nTime on Application: {}", 
-                self.curr_proc.name, elapsed_time.as_secs());
-        }
 
+            if let Some(p) = self.prev_proc.clone() {
+                let elapsed = self.start_time.elapsed().unwrap().as_secs();
+                if elapsed >= 1 {
+                    self.add_data( Data {
+                        process_name : p.name,
+                        time_focused : elapsed,
+                    });
+                }
+            }
+            
+            for (proc, time) in &self.proc_times {
+                println!("{}: {}", proc, time);
+            }
+
+            self.start_time = SystemTime::now();
+        }
+        
         //Ok(())
     }
 }

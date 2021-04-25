@@ -1,11 +1,10 @@
 
 use std::sync::{Arc, Condvar, Mutex};
 
-use xcb::{ConnError, GenericError, GenericEvent};
+use xcb::{ConnError, GenericError};
 use xcb_util::ewmh;
 
 use thiserror::Error;
-use tokio::time::Duration;
 
 #[derive(Error, Debug)]
 pub enum EventError {
@@ -38,7 +37,6 @@ pub struct EventHandler {
     event: Option<u32>,
     conn: ewmh::Connection,
     screen_id: i32,
-    min_time: Duration,
     active_win: u32,
     wm_name: u32,
     vis_name: u32,
@@ -68,7 +66,7 @@ impl EventHandler {
         Ok((ewmh, screen_id))
     }
 
-    pub fn new(sec: u64) -> EventResult<EventHandler> {
+    pub fn new() -> EventResult<EventHandler> {
         let (ewmh, screen) = Self::establish_conn()?;
 
         let aw = ewmh.ACTIVE_WINDOW();
@@ -80,7 +78,6 @@ impl EventHandler {
             event: None,
             conn: ewmh,
             screen_id: screen,
-            min_time: Duration::from_secs(sec),
             active_win: aw,
             wm_name: wm,
             vis_name: vn,
@@ -88,8 +85,6 @@ impl EventHandler {
         })
     }
 
-    // TODO set up so that it can async check if min_time has pass before updating
-    // (sending that new window has been focused)
     pub async fn start(mut self, pid_cond: Arc<(Mutex<u32>,Condvar)>) -> Result<(), EventError> {
         loop {
             {
@@ -108,13 +103,12 @@ impl EventHandler {
                             if atom == self.active_win
                                 || atom == self.wm_name
                                 || atom == self.vis_name
-                                || atom == self.curr_desk
+                              //  || atom == self.curr_desk
                             {
                                 let active =
                                     xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
                                         .get_reply()?;
                                 {
-
                                     let (pid, cond) = &*pid_cond;
 
                                     match pid.lock() {

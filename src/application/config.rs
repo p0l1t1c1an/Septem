@@ -34,27 +34,6 @@ pub enum ConfigError {
  */
 
 #[derive(Clone, Deserialize, Debug)]
-pub struct EventHandlerConfig {
-    min_focus_time: u8,
-    delay: u8,
-}
-
-impl EventHandlerConfig {
-    pub fn min_focus_time(&self) -> u8 {
-        self.min_focus_time
-    }
-}
-
-impl Default for EventHandlerConfig {
-    fn default() -> Self {
-        Self {
-            min_focus_time: 10,
-            delay: 3,
-        }
-    }
-}
-
-#[derive(Clone, Deserialize, Debug)]
 pub struct RecorderConfig {
     productive: Vec<String>,
     unproductive: Vec<String>,
@@ -143,7 +122,6 @@ impl<'a> DateTimeConfig {
 pub struct Config {
     shared_dir: Option<String>,
     blacklist: Option<DateTimeConfig>,
-    event_handler: Option<EventHandlerConfig>,
     recorder: RecorderConfig,
 }
 
@@ -171,10 +149,6 @@ impl Config {
 
     pub fn blacklists_dates(&self) -> DateTimeConfig {
         self.blacklist.clone().unwrap_or_default()
-    }
-
-    pub fn event_handler_config(&self) -> EventHandlerConfig {
-        self.event_handler.clone().unwrap_or_default()
     }
 
     pub fn recorder_config(&self) -> RecorderConfig {
