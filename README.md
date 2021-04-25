@@ -11,7 +11,7 @@ you were for the week. As well, it has the percentage for each individual applic
 
 ### Current Goals
 - [x] Handle change of active window
-- [ ] Track what application is active via PID and WM Name
+- [x] Track what application is active via PID and WM Name
 - [ ] Keep record of how long and the percentage for each apps 
 - [ ] Create weekly config system (maybe .toml files)
 - [ ] Create alert system for being unproductive
