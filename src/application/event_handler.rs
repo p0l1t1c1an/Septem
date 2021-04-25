@@ -1,5 +1,5 @@
 
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, atomic::{AtomicBool, Ordering}};
 
 use xcb::{ConnError, GenericError};
 use xcb_util::ewmh;
@@ -85,8 +85,8 @@ impl EventHandler {
         })
     }
 
-    pub async fn start(mut self, pid_cond: Arc<(Mutex<u32>,Condvar)>) -> Result<(), EventError> {
-        loop {
+    pub async fn start(mut self, pid_cond: Arc<(Mutex<u32>,Condvar)>, shutdown: Arc<AtomicBool>) -> Result<(), EventError> {
+        while !shutdown.load(Ordering::Relaxed){
             {
                 self.event = None;
                 let polled = self.conn.wait_for_event();

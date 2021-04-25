@@ -4,9 +4,10 @@ use crate::application::{
     event_handler::{EventError, EventHandler},
     process,
     recorder::{Recorder, RecorderError},
+    signal_handler::{SignalHandler, SignalError},
 };
 
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::{Arc, Mutex, Condvar, atomic::AtomicBool};
 use std::time::SystemTime;
 
 use tokio::task::JoinHandle;
@@ -20,19 +21,24 @@ pub enum ClientError {
 
     #[error("{0}")]
     EventClientError(#[from] EventError),
+
+    #[error("{0}")]
+    SignalClientError(#[from] SignalError),
 }
 
 pub type ClientResult<T> = Result<T, ClientError>;
 
 type PidMutex = Arc<(Mutex<u32>, Condvar)>;
+type ShutdownMutex = Arc<AtomicBool>;
 type ProcessMutex = Arc<Mutex<process::Process>>;
 type TimeMutex = Arc<Mutex<SystemTime>>;
 
 type JoinClients<T> = Vec<JoinHandle<ClientResult<T>>>;
 
 pub enum Client {
-    RecorderClient(PidMutex, Recorder),
-    EventClient(PidMutex, EventHandler),
+    RecorderClient(PidMutex, ShutdownMutex, Recorder),
+    EventClient(PidMutex, ShutdownMutex, EventHandler),
+    SignalClient(ShutdownMutex, SignalHandler),
 }
 
 pub struct Server {
@@ -42,8 +48,9 @@ pub struct Server {
 impl Client {
     pub async fn start(self) -> ClientResult<()> {
         match self {
-            Client::RecorderClient(p, r) => r.start(p).await?,
-            Client::EventClient(p, e) => e.start(p).await?,
+            Client::RecorderClient(p, s, r) => r.start(p, s).await?,
+            Client::EventClient(p, s, e) => e.start(p, s).await?,
+            Client::SignalClient(s_m, s_h) => s_h.start(s_m).await?,
         }
         Ok(())
     }
