@@ -21,7 +21,6 @@ pub enum ProcessError {
     AsciiToUtf8Error(#[from] Utf8Error),
 
     // Somehow the C code returns an unexpected value
-    // A little reference to a trippy music video
     #[error("And you may ask yourself, hOw DiD I gET HeRE?")]
     UnknownError,
 }

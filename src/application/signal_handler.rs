@@ -1,9 +1,12 @@
-
+use futures::stream::StreamExt;
 use signal_hook::consts::signal::*;
 use signal_hook_tokio::{Handle, Signals};
-use futures::stream::StreamExt;
 
-use std::sync::{Arc, atomic::{AtomicBool, Ordering},};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use tokio::sync::Notify;
 
 use std::io;
 use thiserror::Error;
@@ -15,25 +18,18 @@ pub enum SignalError {
 
     #[error("An unregistered error was caught and cannot be handled")]
     UnknownSignalError,
-
 }
 
 type SignalResult<T> = Result<T, SignalError>;
 
 pub struct SignalHandler {
-    signals : Signals,
-    handle : Handle,
+    signals: Signals,
+    handle: Handle,
 }
-
 
 impl SignalHandler {
     pub fn new() -> SignalResult<SignalHandler> {
-        let sig = Signals::new(&[
-            SIGHUP,
-            SIGTERM,
-            SIGINT,
-            SIGQUIT,
-        ])?;
+        let sig = Signals::new(&[SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
         let hand = sig.handle();
 
         Ok(SignalHandler {
@@ -43,7 +39,7 @@ impl SignalHandler {
     }
 
     pub async fn start(self, shutdown: Arc<AtomicBool>) -> SignalResult<()> {
-        let mut signals = self.signals.fuse(); 
+        let mut signals = self.signals.fuse();
         while let Some(sig) = signals.next().await {
             match sig {
                 SIGHUP | SIGTERM | SIGINT | SIGQUIT => {
@@ -57,6 +53,4 @@ impl SignalHandler {
 
         Ok(())
     }
-
 }
-

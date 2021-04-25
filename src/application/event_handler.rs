@@ -1,5 +1,11 @@
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Condvar, Mutex,
+};
 
-use std::sync::{Arc, Condvar, Mutex, atomic::{AtomicBool, Ordering}};
+use futures::future::{select, Either};
+use futures::pin_mut;
+use tokio::sync::Notify;
 
 use xcb::{ConnError, GenericError};
 use xcb_util::ewmh;
@@ -34,16 +40,15 @@ impl From<GenericError> for EventError {
 type EventResult<T> = Result<T, EventError>;
 
 pub struct EventHandler {
-    event: Option<u32>,
     conn: ewmh::Connection,
     screen_id: i32,
     active_win: u32,
     wm_name: u32,
     vis_name: u32,
-    curr_desk: u32,
 }
 
 unsafe impl Send for EventHandler {}
+unsafe impl Sync for EventHandler {}
 
 impl EventHandler {
     fn establish_conn() -> EventResult<(ewmh::Connection, i32)> {
@@ -72,52 +77,50 @@ impl EventHandler {
         let aw = ewmh.ACTIVE_WINDOW();
         let wm = ewmh.WM_NAME();
         let vn = ewmh.WM_VISIBLE_NAME();
-        let cd = ewmh.CURRENT_DESKTOP();
 
         Ok(EventHandler {
-            event: None,
             conn: ewmh,
             screen_id: screen,
             active_win: aw,
             wm_name: wm,
             vis_name: vn,
-            curr_desk: cd,
         })
     }
 
-    pub async fn start(mut self, pid_cond: Arc<(Mutex<u32>,Condvar)>, shutdown: Arc<AtomicBool>) -> Result<(), EventError> {
-        while !shutdown.load(Ordering::Relaxed){
-            {
-                self.event = None;
-                let polled = self.conn.wait_for_event();
-                match polled {
-                    None => {
-                        break;
-                    }
-                    Some(e) => {
-                        let r = e.response_type() & !0x80;
-                        if r == xcb::PROPERTY_NOTIFY {
-                            let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&e) };
-                            let atom = prop.atom();
+    pub async fn start(
+        self,
+        pid_cond: Arc<(Mutex<u32>, Condvar)>,
+        shutdown: Arc<AtomicBool>,
+    ) -> EventResult<()> {
+        while !shutdown.load(Ordering::Relaxed) {
+            let polled = self.conn.wait_for_event();
+            match polled {
+                None => {
+                    break;
+                }
+                Some(e) => {
+                    let r = e.response_type() & !0x80;
+                    if r == xcb::PROPERTY_NOTIFY {
+                        let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&e) };
+                        let atom = prop.atom();
 
-                            if atom == self.active_win
-                                || atom == self.wm_name
-                                || atom == self.vis_name
-                              //  || atom == self.curr_desk
+                        if atom == self.active_win || atom == self.wm_name || atom == self.vis_name
+                        {
+                            let active =
+                                xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
+                                    .get_reply()?;
                             {
-                                let active =
-                                    xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
-                                        .get_reply()?;
-                                {
-                                    let (pid, cond) = &*pid_cond;
+                                let (pid, cond) = &*pid_cond;
 
-                                    match pid.lock() {
-                                        Ok(mut p) => *p = xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?,
-                                        Err(_) => Err(EventError::PosionedMutexError)?,
+                                match pid.lock() {
+                                    Ok(mut p) => {
+                                        *p = xcb_util::ewmh::get_wm_pid(&self.conn, active)
+                                            .get_reply()?
                                     }
-                                    
-                                    cond.notify_one();
+                                    Err(_) => Err(EventError::PosionedMutexError)?,
                                 }
+
+                                cond.notify_one();
                             }
                         }
                     }

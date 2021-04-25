@@ -5,15 +5,17 @@ mod recorder;
 pub mod server;
 mod signal_handler;
 
+use config::{Config, ConfigError};
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use server::{Client, ClientError, Server};
 use signal_handler::{SignalError, SignalHandler};
 
 use futures::future::try_join_all;
+use tokio::sync::Notify;
 use tokio::task::JoinError;
 
-use std::sync::{Arc, Mutex, Condvar, atomic::AtomicBool};
+use std::sync::{atomic::AtomicBool, Arc, Condvar, Mutex};
 
 use thiserror::Error;
 
@@ -24,6 +26,9 @@ pub enum AppError {
 
     #[error("{0}")]
     RunningClientError(#[from] ClientError),
+
+    #[error("{0}")]
+    StartUpConfigError(#[from] ConfigError),
 
     #[error("{0}")]
     StartUpRecorderError(#[from] RecorderError),
@@ -40,17 +45,16 @@ type AppResult<T> = Result<T, AppError>;
 pub async fn init() -> AppResult<Server> {
     let r = Recorder::new("/usr/home/p0l1t1c1an/.local/share/Septem".to_owned())?;
     let e = EventHandler::new()?;
-    let s = SignalHandler::new()?; 
-    
+    let s = SignalHandler::new()?;
+
     let pid = Arc::new((Mutex::new(0), Condvar::new()));
     let shutdown = Arc::new(AtomicBool::new(false));
 
-    let mut v = Vec::new();
-    v.push(Client::EventClient(Arc::clone(&pid), Arc::clone(&shutdown), e));
-    v.push(Client::RecorderClient(pid, Arc::clone(&shutdown), r));
-    v.push(Client::SignalClient(shutdown, s));
-
-    Ok(Server::new(v))
+    Ok(Server::new(vec![
+        Client::EventClient(Arc::clone(&pid), Arc::clone(&shutdown), e),
+        Client::RecorderClient(pid, Arc::clone(&shutdown), r),
+        Client::SignalClient(shutdown, s),
+    ]))
 }
 
 pub async fn start(server: Server) -> Result<(), AppError> {
