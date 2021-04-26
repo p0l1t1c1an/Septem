@@ -131,12 +131,11 @@ impl Recorder {
     pub async fn start(
         mut self,
         pid_cond: Arc<(Mutex<u32>, Condvar)>,
-        shutdown: Arc<AtomicBool>,
+        shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
     ) -> RecorderResult<()> {
-        while !shutdown.load(Ordering::Relaxed) {
+        while !shutdown.0.load(Ordering::Relaxed) {
             let (pid, cond) = &*pid_cond;
             self.wait_for_event(pid, cond).await?;
-
             if let Some(p) = self.prev_proc.clone() {
                 let elapsed = self.start_time.elapsed().unwrap().as_secs();
                 if elapsed >= 1 {
@@ -145,8 +144,7 @@ impl Recorder {
                         time_focused: elapsed,
                     });
                 }
-            }
-
+            } 
             for (proc, time) in &self.proc_times {
                 println!("{}: {}", proc, time);
             }
@@ -157,3 +155,11 @@ impl Recorder {
         Ok(())
     }
 }
+
+
+impl Drop for Recorder {
+    fn drop(&mut self) {
+        let _ = self.write_data(); 
+    }
+}
+

@@ -6,7 +6,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use tokio::sync::Notify;
+
+use std::sync::{Mutex, Condvar};
 
 use std::io;
 use thiserror::Error;
@@ -38,12 +39,14 @@ impl SignalHandler {
         })
     }
 
-    pub async fn start(self, shutdown: Arc<AtomicBool>) -> SignalResult<()> {
+    pub async fn start(self, shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>) -> SignalResult<()> {
         let mut signals = self.signals.fuse();
         while let Some(sig) = signals.next().await {
             match sig {
                 SIGHUP | SIGTERM | SIGINT | SIGQUIT => {
-                    shutdown.store(true, Ordering::Relaxed);
+                    shutdown.0.store(true, Ordering::Relaxed);
+                    let (_, _, c) = &*shutdown;
+                    c.notify_one();
                     self.handle.close();
                     break;
                 }

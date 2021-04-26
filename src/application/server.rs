@@ -10,8 +10,7 @@ use crate::application::{
 use std::sync::{atomic::AtomicBool, Arc, Condvar, Mutex};
 use std::time::SystemTime;
 
-use tokio::{sync::Notify, task::JoinHandle};
-
+use tokio::task::JoinHandle;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -29,7 +28,7 @@ pub enum ClientError {
 pub type ClientResult<T> = Result<T, ClientError>;
 
 type PidMutex = Arc<(Mutex<u32>, Condvar)>;
-type Shutdown = Arc<AtomicBool>;
+type Shutdown = Arc<(AtomicBool, Mutex<()>, Condvar)>;
 
 type ProcessMutex = Arc<Mutex<process::Process>>;
 type TimeMutex = Arc<Mutex<SystemTime>>;

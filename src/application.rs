@@ -12,7 +12,6 @@ use server::{Client, ClientError, Server};
 use signal_handler::{SignalError, SignalHandler};
 
 use futures::future::try_join_all;
-use tokio::sync::Notify;
 use tokio::task::JoinError;
 
 use std::sync::{atomic::AtomicBool, Arc, Condvar, Mutex};
@@ -48,7 +47,7 @@ pub async fn init() -> AppResult<Server> {
     let s = SignalHandler::new()?;
 
     let pid = Arc::new((Mutex::new(0), Condvar::new()));
-    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown = Arc::new((AtomicBool::new(false), Mutex::new(()), Condvar::new()));
 
     Ok(Server::new(vec![
         Client::EventClient(Arc::clone(&pid), Arc::clone(&shutdown), e),
@@ -63,5 +62,6 @@ pub async fn start(server: Server) -> Result<(), AppError> {
     for e in errors.into_iter() {
         e?;
     }
+    println!("App End");
     Ok(())
 }
