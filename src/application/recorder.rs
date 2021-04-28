@@ -113,7 +113,7 @@ impl Recorder {
     }
 
     // Async Functions
-    
+
     async fn write_data(share: String, proc_times: HashMap<String, u64>) -> RecorderResult<()> {
         let mut writer = WriterBuilder::new().from_path(Path::new(&share).join(DATA_FILE))?;
         for (name, time) in proc_times.into_iter() {
@@ -187,4 +187,3 @@ impl Recorder {
         Ok(())
     }
 }
-

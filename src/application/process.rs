@@ -1,13 +1,14 @@
 use libc::{c_char, c_int, c_void, free, pid_t};
 
-use std::ffi::CStr;
-use std::str::Utf8Error;
-
-use thiserror::Error;
-
 extern "C" {
     fn proc_name(name_ptr: *mut *mut c_char, pid: pid_t) -> c_int;
 }
+
+use std::ffi::CStr;
+use std::fs::read_to_string;
+use std::str::Utf8Error;
+
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ProcessError {
@@ -19,6 +20,9 @@ pub enum ProcessError {
 
     #[error("Failed to convert C str to Rust str")]
     AsciiToUtf8Error(#[from] Utf8Error),
+
+    #[error("{0}")]
+    FileProcError(#[from] std::io::Error),
 
     // Somehow the C code returns an unexpected value
     #[error("And you may ask yourself, hOw DiD I gET HeRE?")]
@@ -34,6 +38,7 @@ pub struct Process {
 unsafe impl Send for Process {}
 
 impl Process {
+    #[cfg(target_os = "freebsd")]
     pub fn new(p: pid_t) -> Result<Process, ProcessError> {
         let mut proc = Process {
             pid: p,
@@ -52,5 +57,13 @@ impl Process {
         }
 
         Ok(proc)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn new(p: pid_t) -> Result<Process, ProcessError> {
+        Ok(Process {
+            pid: p,
+            name: read_to_string("/proc/" + p.to_string() + "/cmdline")?,
+        })
     }
 }
