@@ -140,18 +140,18 @@ impl Config {
     }
 
     pub fn shared_dir(&self) -> Result<String, ConfigError> {
-        let share_dir = self.shared_dir.clone();
+        let share_dir = self.shared_dir.to_owned();
         match share_dir {
-            Some(s) => Ok(s.to_owned()),
+            Some(s) => Ok(s),
             None => Ok(env::var("HOME")? + DEFAULT_SHARE),
         }
     }
 
     pub fn blacklists_dates(&self) -> DateTimeConfig {
-        self.blacklist.clone().unwrap_or_default()
+        self.blacklist.to_owned().unwrap_or_default()
     }
 
     pub fn recorder_config(&self) -> RecorderConfig {
-        self.recorder.clone()
+        self.recorder.to_owned()
     }
 }
