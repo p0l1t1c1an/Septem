@@ -8,7 +8,6 @@ async fn start() -> Result<(), AppError> {
     Ok(())
 }
 
-
 fn main() -> Result<(), AppError> {
     let run = Runtime::new().unwrap();
     run.block_on(start())?;

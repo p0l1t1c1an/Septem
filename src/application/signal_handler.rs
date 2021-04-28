@@ -7,7 +7,7 @@ use std::sync::{
     Arc,
 };
 
-use std::sync::{Mutex, Condvar};
+use std::sync::{Condvar, Mutex};
 
 use std::io;
 use thiserror::Error;

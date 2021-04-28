@@ -10,8 +10,8 @@ use crate::application::{
 use std::sync::{atomic::AtomicBool, Arc, Condvar, Mutex};
 use std::time::SystemTime;
 
-use tokio::task::JoinHandle;
 use thiserror::Error;
+use tokio::task::JoinHandle;
 
 #[derive(Error, Debug)]
 pub enum ClientError {

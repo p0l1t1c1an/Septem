@@ -10,8 +10,8 @@ use serde_derive::Deserialize;
 
 use thiserror::Error;
 
-const DEFAULT_SHARE: &str = "/.local/share/Septem/";
-const DEFAULT_CONFIG: &str = "/.config/Septem/septem.toml";
+const DEFAULT_SHARE: &'static str = "/.local/share/Septem/";
+const DEFAULT_CONFIG: &'static str = "/.config/Septem/septem.toml";
 
 #[derive(Error, Debug)]
 pub enum ConfigError {

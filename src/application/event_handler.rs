@@ -21,21 +21,17 @@ pub enum EventError {
     ScreenIteratorError(i32),
 
     // Could integrate xcb-util-errors to get verbose error string
-    #[error(
-        "Failed either the mask change, EWMH connection, or active window\nError Code is {1}"
-    )]
+    #[error("Failed either the mask change, EWMH connection, or active window\nError Code is {1}")]
     GenericXcbError(GenericError, u8),
 
     #[error("Wait_for_event returned None")]
     WaitReturnsNoneError,
-    
+
     #[error("The pid mutex failed to load")]
     PosionedMutexError,
-    
+
     #[error("{0}")]
     SelectError(#[from] JoinError),
-    
-
 }
 
 impl From<GenericError> for EventError {
@@ -95,10 +91,11 @@ impl EventHandler {
         })
     }
 
-    async fn wait_for_event(self, 
+    async fn wait_for_event(
+        self,
         shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
-        pid_cond: Arc<(Mutex<u32>, Condvar)>) -> EventResult<()> {
-        
+        pid_cond: Arc<(Mutex<u32>, Condvar)>,
+    ) -> EventResult<()> {
         while !shutdown.0.load(Ordering::Relaxed) {
             match self.conn.wait_for_event() {
                 None => Err(EventError::WaitReturnsNoneError)?,
@@ -108,8 +105,7 @@ impl EventHandler {
                     let a = prop.atom();
 
                     if e == xcb::PROPERTY_NOTIFY {
-                        if a == self.active_win || a == self.wm_name || a == self.vis_name
-                        {
+                        if a == self.active_win || a == self.wm_name || a == self.vis_name {
                             let active =
                                 xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
                                     .get_reply()?;
@@ -135,7 +131,9 @@ impl EventHandler {
         Ok(())
     }
 
-    async fn wait_for_condition(shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>) -> EventResult<()> {
+    async fn wait_for_condition(
+        shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
+    ) -> EventResult<()> {
         let (_, m, c) = &*shutdown;
         let mut guard = m.lock().unwrap();
         guard = c.wait(guard).unwrap();
@@ -151,17 +149,12 @@ impl EventHandler {
     ) -> EventResult<()> {
         {
             let event = tokio::spawn(self.wait_for_event(shutdown.clone(), pid_cond.clone()));
-            let stopped = tokio::spawn(EventHandler::wait_for_condition(shutdown.clone())); 
-            
+            let stopped = tokio::spawn(EventHandler::wait_for_condition(shutdown.clone()));
+
             let n = match select(event, stopped).await {
-                Either::Left(_) => {
-                    1
-                }
-                Either::Right(_) => {
-                    2
-                }
+                Either::Left(_) => 1,
+                Either::Right(_) => 2,
             };
-        
         }
 
         let (_, c) = &*pid_cond;

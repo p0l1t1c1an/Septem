@@ -2,6 +2,7 @@
 #[allow(unused_variables)]
 use crate::application::process;
 use process::{Process, ProcessError};
+use tokio::task::{JoinError, JoinHandle};
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -34,6 +35,9 @@ pub enum RecorderError {
 
     #[error("{0}")]
     FileError(#[from] std::io::Error),
+
+    #[error("{0}")]
+    WriteThreadError(#[from] JoinError),
 }
 
 pub type RecorderResult<T> = Result<T, RecorderError>;
@@ -55,6 +59,8 @@ pub struct Recorder {
 }
 
 impl Recorder {
+    // Procedural Functions
+
     fn add_data(&mut self, data: Data) {
         match self.proc_times.get_mut(&data.process_name) {
             Some(t) => *t += data.time_focused,
@@ -96,18 +102,6 @@ impl Recorder {
         }
     }
 
-    fn write_data(&self) -> RecorderResult<()> {
-        let mut writer =
-            WriterBuilder::new().from_path(Path::new(&self.share_dir).join(DATA_FILE))?;
-        for (name, time) in self.proc_times.clone().into_iter() {
-            writer.serialize(Data {
-                process_name: name,
-                time_focused: time,
-            })?;
-        }
-        Ok(())
-    }
-
     pub fn new(share: String) -> RecorderResult<Recorder> {
         Ok(Recorder {
             share_dir: share.to_owned(),
@@ -116,6 +110,31 @@ impl Recorder {
             start_time: SystemTime::now(),
             proc_times: Recorder::parse_data(&share)?,
         })
+    }
+
+    // Async Functions
+    
+    async fn write_data(share: String, proc_times: HashMap<String, u64>) -> RecorderResult<()> {
+        let mut writer = WriterBuilder::new().from_path(Path::new(&share).join(DATA_FILE))?;
+        for (name, time) in proc_times.into_iter() {
+            writer.serialize(Data {
+                process_name: name,
+                time_focused: time,
+            })?;
+        }
+        Ok(())
+    }
+
+    async fn wait_to_write(
+        is_running: Option<JoinHandle<RecorderResult<()>>>,
+        share: String,
+        proc_times: HashMap<String, u64>,
+    ) -> RecorderResult<()> {
+        if let Some(h) = is_running {
+            h.await??;
+        }
+        Recorder::write_data(share, proc_times).await?;
+        Ok(())
     }
 
     async fn wait_for_event(&mut self, pid: &Mutex<u32>, cond: &Condvar) -> RecorderResult<()> {
@@ -133,6 +152,12 @@ impl Recorder {
         pid_cond: Arc<(Mutex<u32>, Condvar)>,
         shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
     ) -> RecorderResult<()> {
+        let mut write_handle = tokio::spawn(Recorder::wait_to_write(
+            None,
+            self.share_dir.to_owned(),
+            self.proc_times.to_owned(),
+        ));
+
         while !shutdown.0.load(Ordering::Relaxed) {
             let (pid, cond) = &*pid_cond;
             self.wait_for_event(pid, cond).await?;
@@ -144,7 +169,14 @@ impl Recorder {
                         time_focused: elapsed,
                     });
                 }
-            } 
+            }
+
+            write_handle = tokio::spawn(Recorder::wait_to_write(
+                Some(write_handle),
+                self.share_dir.to_owned(),
+                self.proc_times.to_owned(),
+            ));
+
             for (proc, time) in &self.proc_times {
                 println!("{}: {}", proc, time);
             }
@@ -153,13 +185,6 @@ impl Recorder {
         }
 
         Ok(())
-    }
-}
-
-
-impl Drop for Recorder {
-    fn drop(&mut self) {
-        let _ = self.write_data(); 
     }
 }
 
