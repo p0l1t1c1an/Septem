@@ -42,7 +42,8 @@ pub enum AppError {
 type AppResult<T> = Result<T, AppError>;
 
 pub async fn init() -> AppResult<Server> {
-    let r = Recorder::new("/usr/home/p0l1t1c1an/.local/share/Septem".to_owned())?;
+    let c = Config::new(None)?;    
+    let r = Recorder::new(c.shared_dir()?)?;
     let e = EventHandler::new()?;
     let s = SignalHandler::new()?;
 
