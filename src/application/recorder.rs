@@ -145,7 +145,11 @@ impl Recorder {
         Ok(())
     }
 
-    async fn wait_for_event(&mut self, pid: &Mutex<Option<u32>>, cond: &Condvar) -> RecorderResult<()> {
+    async fn wait_for_event(
+        &mut self,
+        pid: &Mutex<Option<u32>>,
+        cond: &Condvar,
+    ) -> RecorderResult<()> {
         match pid.lock() {
             Ok(p) => match cond.wait(p) {
                 Ok(p) => {
@@ -156,9 +160,9 @@ impl Recorder {
                     }
                 }
                 Err(_) => Err(RecorderError::PosionedCondvarError("pid".to_owned()))?,
-            }
+            },
             Err(_) => Err(RecorderError::PosionedMutexError("pid".to_owned()))?,
-        } 
+        }
         Ok(())
     }
 
@@ -177,13 +181,13 @@ impl Recorder {
         while !shutdown.0.load(Ordering::SeqCst) {
             let (pid, cond) = &*pid_cond;
             self.wait_for_event(pid, cond).await?;
-            
+
             if let Some(p) = self.prev_proc.clone() {
                 self.add_data(Data {
                     process_name: p.name,
                     time_focused: self.start_time.elapsed().unwrap().as_secs(),
                 });
-                
+
                 let write_elapsed = self.write_time.elapsed().unwrap().as_secs();
                 self.write_time = SystemTime::now();
 
@@ -195,14 +199,14 @@ impl Recorder {
                     ));
                 }
             }
-     
+
             for (proc, time) in &self.proc_times {
                 println!("{}: {}", proc, time);
             }
 
             self.start_time = SystemTime::now();
         }
-        
+
         write_handle.await??;
         Ok(())
     }

@@ -101,7 +101,7 @@ impl EventHandler {
     ) -> EventResult<()> {
         while !shutdown.0.load(Ordering::SeqCst) {
             match self.conn.wait_for_event() {
-                None => { 
+                None => {
                     Err(EventError::WaitReturnsNoneError)?;
                 }
                 Some(event) => {
@@ -123,7 +123,10 @@ impl EventHandler {
                                     Ok(mut p) => {
                                         *p = match active {
                                             xcb::NONE => None,
-                                            _ => Some(xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?),
+                                            _ => Some(
+                                                xcb_util::ewmh::get_wm_pid(&self.conn, active)
+                                                    .get_reply()?,
+                                            ),
                                         }
                                     }
                                     Err(_) => {
@@ -153,7 +156,7 @@ impl EventHandler {
                     println!("Cond End");
                 }
                 Err(_) => Err(EventError::PosionedCondvarError("shutdown".to_owned()))?,
-            }
+            },
             Err(_) => Err(EventError::PosionedMutexError("shutdown".to_owned()))?,
         }
         Ok(())
@@ -176,7 +179,7 @@ impl EventHandler {
 
         let (_, c) = &*pid_cond;
         c.notify_one();
-        
+
         println!("Very End");
         Ok(())
     }
