@@ -7,7 +7,7 @@ use futures::future::{select, Either};
 use tokio::task::JoinError;
 use tokio::{select, try_join};
 
-use xcb::{ConnError, GenericError, GenericEvent};
+use xcb::{ConnError, GenericError};
 use xcb_util::ewmh;
 
 use thiserror::Error;
@@ -97,28 +97,34 @@ impl EventHandler {
     async fn wait_for_event(
         self,
         shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
-        pid_cond: Arc<(Mutex<u32>, Condvar)>,
+        pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
     ) -> EventResult<()> {
-        while !shutdown.0.load(Ordering::Relaxed) {
+        while !shutdown.0.load(Ordering::SeqCst) {
             match self.conn.wait_for_event() {
-                None => Err(EventError::WaitReturnsNoneError)?,
+                None => { 
+                    Err(EventError::WaitReturnsNoneError)?;
+                }
                 Some(event) => {
                     let e = event.response_type() & !0x80;
                     let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
                     let a = prop.atom();
 
                     if e == xcb::PROPERTY_NOTIFY {
+                        println!("Event Prop!");
                         if a == self.active_win || a == self.wm_name || a == self.vis_name {
                             let active =
                                 xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
                                     .get_reply()?;
+                            println!("AW = {}", active);
                             {
                                 let (pid, cond) = &*pid_cond;
 
                                 match pid.lock() {
                                     Ok(mut p) => {
-                                        *p = xcb_util::ewmh::get_wm_pid(&self.conn, active)
-                                            .get_reply()?
+                                        *p = match active {
+                                            xcb::NONE => None,
+                                            _ => Some(xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?),
+                                        }
                                     }
                                     Err(_) => {
                                         Err(EventError::PosionedMutexError("pid".to_owned()))?
@@ -143,11 +149,11 @@ impl EventHandler {
         match m.lock() {
             Ok(guard) => match c.wait(guard) {
                 Ok(_) => {
-                    shutdown.0.store(true, Ordering::Relaxed);
+                    shutdown.0.store(true, Ordering::SeqCst);
                     println!("Cond End");
                 }
                 Err(_) => Err(EventError::PosionedCondvarError("shutdown".to_owned()))?,
-            },
+            }
             Err(_) => Err(EventError::PosionedMutexError("shutdown".to_owned()))?,
         }
         Ok(())
@@ -155,7 +161,7 @@ impl EventHandler {
 
     pub async fn start(
         self,
-        pid_cond: Arc<(Mutex<u32>, Condvar)>,
+        pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
         shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
     ) -> EventResult<()> {
         {
@@ -165,13 +171,13 @@ impl EventHandler {
             match select(event, stopped).await {
                 Either::Left((left, _)) => left??,
                 Either::Right((right, _)) => right??,
-            };
+            }
         }
 
         let (_, c) = &*pid_cond;
         c.notify_one();
+        
         println!("Very End");
-
         Ok(())
     }
 }

@@ -27,7 +27,7 @@ pub enum ClientError {
 
 pub type ClientResult<T> = Result<T, ClientError>;
 
-type PidMutex = Arc<(Mutex<u32>, Condvar)>;
+type PidMutex = Arc<(Mutex<Option<u32>>, Condvar)>;
 type Shutdown = Arc<(AtomicBool, Mutex<()>, Condvar)>;
 
 type ProcessMutex = Arc<Mutex<process::Process>>;

@@ -44,7 +44,7 @@ impl SignalHandler {
         while let Some(sig) = signals.next().await {
             match sig {
                 SIGHUP | SIGTERM | SIGINT | SIGQUIT => {
-                    shutdown.0.store(true, Ordering::Relaxed);
+                    shutdown.0.store(true, Ordering::SeqCst);
                     let (_, _, c) = &*shutdown;
                     c.notify_one();
                     self.handle.close();
