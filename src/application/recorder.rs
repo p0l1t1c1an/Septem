@@ -1,8 +1,10 @@
+use crate::application::client::{Client, ClientResult, Pid, Shutdown};
 use crate::application::config::RecorderConfig;
 use crate::application::process;
 
 use process::{Process, ProcessError};
 use tokio::task::{JoinError, JoinHandle};
+use crossbeam::channel::{Sender, TrySendError};
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -10,12 +12,10 @@ use std::path::Path;
 use std::time::SystemTime;
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Condvar, Mutex,
-    },
+    sync::atomic::Ordering,
 };
 
+use async_trait::async_trait;
 use csv::{ReaderBuilder, WriterBuilder};
 use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
@@ -39,6 +39,9 @@ pub enum RecorderError {
     #[error("{0}")]
     WriteThreadError(#[from] JoinError),
 
+    #[error("The receiver was dropped while the sender is still up")]
+    SenderError,
+
     #[error("The {0} mutex failed to lock")]
     PosionedMutexError(String),
 
@@ -58,6 +61,9 @@ struct Data {
 }
 
 pub struct Recorder {
+    pid: Pid,
+    shutdown: Shutdown,
+    is_prod: Sender<bool>,
     config: RecorderConfig,
     share_dir: String,
     prev_proc: Option<Process>,
@@ -118,10 +124,13 @@ impl Recorder {
         }
     }
 
-    pub fn new(share: String, conf: RecorderConfig) -> RecorderResult<Recorder> {
+    pub fn new(share: String, conf: RecorderConfig, pid: Pid, shutdown: Shutdown, is_prod: Sender<bool>) -> RecorderResult<Recorder> {
         let map = Recorder::parse_data(&share, conf.productive())?;
 
         Ok(Recorder {
+            pid: pid,
+            shutdown: shutdown,
+            is_prod: is_prod,
             config: conf,
             share_dir: share.to_owned(),
             prev_proc: None,
@@ -161,11 +170,8 @@ impl Recorder {
         Ok(())
     }
 
-    async fn wait_for_event(
-        &mut self,
-        pid: &Mutex<Option<u32>>,
-        cond: &Condvar,
-    ) -> RecorderResult<()> {
+    async fn wait_for_event(&mut self) -> RecorderResult<()> {
+        let (pid, cond) = &*self.pid;
         match pid.lock() {
             Ok(p) => match cond.wait(p) {
                 Ok(p) => {
@@ -181,12 +187,11 @@ impl Recorder {
         }
         Ok(())
     }
+}
 
-    pub async fn start(
-        mut self,
-        pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
-        shutdown: Arc<AtomicBool>,
-    ) -> RecorderResult<()> {
+#[async_trait]
+impl Client for Recorder {
+    async fn start(mut self) -> ClientResult {
         let mut write_handle = tokio::spawn(Recorder::wait_to_write(
             None,
             self.share_dir.to_owned(),
@@ -194,12 +199,18 @@ impl Recorder {
         ));
         self.write_time = SystemTime::now();
 
-        while !shutdown.load(Ordering::SeqCst) {
-            let (pid, cond) = &*pid_cond;
-            self.wait_for_event(pid, cond).await?;
+        while !self.shutdown.load(Ordering::SeqCst) {
+            self.wait_for_event().await?;
 
             if let Some(p) = self.prev_proc.clone() {
                 let prod = self.config.productive().contains(&p.name);
+                match self.is_prod.try_send(prod) {
+                    Ok(_) => { }
+                    Err(e) => match e {
+                        TrySendError::Full(_) => { }
+                        TrySendError::Disconnected(_) => Err(RecorderError::SenderError)?,
+                    }
+                }
                 self.add_data(Data {
                     process_name: p.name,
                     time_focused: self.start_time.elapsed().unwrap().as_secs(),

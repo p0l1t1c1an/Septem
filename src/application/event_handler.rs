@@ -1,10 +1,10 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Condvar, Mutex,
-};
 
+use crate::application::client::{Client, ClientResult, Condition, Pid, Shutdown};
+
+use std::sync::atomic::Ordering;
+
+use async_trait::async_trait;
 use futures::future::{select, Either};
-use tokio::task::JoinError;
 //use tokio::{select, try_join};
 
 use xcb::{ConnError, GenericError};
@@ -32,9 +32,6 @@ pub enum EventError {
 
     #[error("The {0} condvar failed to load")]
     PosionedCondvarError(String),
-
-    #[error("{0}")]
-    SelectError(#[from] JoinError),
 }
 
 impl From<GenericError> for EventError {
@@ -47,6 +44,9 @@ impl From<GenericError> for EventError {
 type EventResult<T> = Result<T, EventError>;
 
 pub struct EventHandler {
+    pid: Pid,
+    shutdown: Shutdown,
+    cond: Condition,
     conn: ewmh::Connection,
     screen_id: i32,
     active_win: u32,
@@ -78,7 +78,7 @@ impl EventHandler {
         Ok((ewmh, screen_id))
     }
 
-    pub fn new() -> EventResult<EventHandler> {
+    pub fn new(pid: Pid, shutdown: Shutdown, cond: Condition) -> EventResult<EventHandler> {
         let (ewmh, screen) = Self::establish_conn()?;
 
         let aw = ewmh.ACTIVE_WINDOW();
@@ -86,6 +86,9 @@ impl EventHandler {
         let vn = ewmh.WM_VISIBLE_NAME();
 
         Ok(EventHandler {
+            pid: pid,
+            shutdown: shutdown,
+            cond: cond,
             conn: ewmh,
             screen_id: screen,
             active_win: aw,
@@ -94,11 +97,7 @@ impl EventHandler {
         })
     }
 
-    async fn wait_for_event(
-        self,
-        shutdown: Arc<AtomicBool>,
-        pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
-    ) -> EventResult<()> {
+    async fn wait_for_event(self, pid: Pid, shutdown: Shutdown) -> EventResult<()> {
         while !shutdown.load(Ordering::SeqCst) {
             match self.conn.wait_for_event() {
                 None => {
@@ -115,9 +114,9 @@ impl EventHandler {
                                 xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
                                     .get_reply()?;
                             {
-                                let (pid, cond) = &*pid_cond;
+                                let (mutex, cond) = &*pid;
 
-                                match pid.lock() {
+                                match mutex.lock() {
                                     Ok(mut p) => {
                                         *p = match active {
                                             xcb::NONE => None,
@@ -143,11 +142,8 @@ impl EventHandler {
         Ok(())
     }
 
-    async fn wait_for_condition(
-        shutdown: Arc<AtomicBool>,
-        condition: Arc<(Mutex<()>, Condvar)>,
-    ) -> EventResult<()> {
-        let (m, c) = &*condition;
+    async fn wait_for_condition(pid: Pid, shutdown: Shutdown, cond: Condition) -> EventResult<()> {
+        let (m, c) = &*cond;
         match m.lock() {
             Ok(guard) => match c.wait(guard) {
                 Ok(_) => {
@@ -158,30 +154,31 @@ impl EventHandler {
             },
             Err(_) => Err(EventError::PosionedMutexError("shutdown".to_owned()))?,
         }
+        
+        let (_, c) = &*pid;
+        c.notify_one();
         Ok(())
     }
+}
 
-    pub async fn start(
-        self,
-        pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
-        shutdown: Arc<AtomicBool>,
-        condition: Arc<(Mutex<()>, Condvar)>,
-    ) -> EventResult<()> {
+#[async_trait]
+impl Client for EventHandler {
+    async fn start(self) -> ClientResult {
         {
-            let event = tokio::spawn(self.wait_for_event(shutdown.clone(), pid_cond.clone()));
             let stopped = tokio::spawn(EventHandler::wait_for_condition(
-                shutdown.clone(),
-                condition.clone(),
+                self.pid.clone(),
+                self.shutdown.clone(),
+                self.cond.clone(),
             ));
+
+            let (p, s) = (self.pid.clone(), self.shutdown.clone());
+            let event = tokio::spawn(self.wait_for_event(p, s));
 
             match select(event, stopped).await {
                 Either::Left((left, _)) => left??,
                 Either::Right((right, _)) => right??,
             }
         }
-
-        let (_, c) = &*pid_cond;
-        c.notify_one();
 
         println!("Very End");
         Ok(())

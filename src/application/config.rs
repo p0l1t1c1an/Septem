@@ -32,7 +32,8 @@ pub enum ConfigError {
 #[derive(Clone, Deserialize, Debug)]
 pub struct AlertConfig {
     delay: u64,
-    trigger_time: u64,
+    productive_time: u64,
+    unproductive_time: u64,
     message: String,
 }
 
@@ -40,8 +41,9 @@ impl Default for AlertConfig {
     fn default() -> Self {
         Self {
             delay: 5,         // 5 seconds deley
-            trigger_time: 20, // 20 minute trigger
-            message: "You have been wasting time for {time} minutes.\nPlease get off of {name}."
+            productive_time: 5, // Resets at 5 minutes
+            unproductive_time: 20, // Prints message at 5 minutes
+            message: "You have been wasting time.\nPlease start being productive."
                 .to_owned(),
         }
     }
@@ -52,8 +54,12 @@ impl AlertConfig {
         self.delay
     }
 
-    pub fn trigger_time(&self) -> u64 {
-        self.trigger_time
+    pub fn productive_time(&self) -> u64 {
+        self.productive_time
+    }
+
+    pub fn unproductive_time(&self) -> u64 {
+        self.unproductive_time
     }
 
     pub fn message(&self) -> &String {
