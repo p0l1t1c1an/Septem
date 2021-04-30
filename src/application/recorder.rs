@@ -145,12 +145,15 @@ impl Recorder {
         Ok(())
     }
 
-    async fn wait_for_event(&mut self, pid: &Mutex<u32>, cond: &Condvar) -> RecorderResult<()> {
+    async fn wait_for_event(&mut self, pid: &Mutex<Option<u32>>, cond: &Condvar) -> RecorderResult<()> {
         match pid.lock() {
             Ok(p) => match cond.wait(p) {
                 Ok(p) => {
                     self.prev_proc = self.curr_proc.clone();
-                    self.curr_proc = Some(Process::new(*p as i32)?);
+                    self.curr_proc = match *p {
+                        Some(u_val) => Some(Process::new(u_val as i32)?),
+                        None => None,
+                    }
                 }
                 Err(_) => Err(RecorderError::PosionedCondvarError("pid".to_owned()))?,
             }
@@ -161,7 +164,7 @@ impl Recorder {
 
     pub async fn start(
         mut self,
-        pid_cond: Arc<(Mutex<u32>, Condvar)>,
+        pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
         shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
     ) -> RecorderResult<()> {
         let mut write_handle = tokio::spawn(Recorder::wait_to_write(

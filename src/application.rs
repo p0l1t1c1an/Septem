@@ -49,7 +49,7 @@ pub async fn init() -> AppResult<Server> {
     let e = EventHandler::new()?;
     let s = SignalHandler::new()?;
 
-    let pid = Arc::new((Mutex::new(0), Condvar::new()));
+    let pid = Arc::new((Mutex::new(None), Condvar::new()));
     let shutdown = Arc::new((AtomicBool::new(false), Mutex::new(()), Condvar::new()));
 
     Ok(Server::new(vec![

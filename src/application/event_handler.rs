@@ -97,29 +97,34 @@ impl EventHandler {
     async fn wait_for_event(
         self,
         shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
-        pid_cond: Arc<(Mutex<u32>, Condvar)>,
+        pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
     ) -> EventResult<()> {
         while !shutdown.0.load(Ordering::SeqCst) {
-            println!("Event Start!");
             match self.conn.wait_for_event() {
-                None => Err(EventError::WaitReturnsNoneError)?,
+                None => { 
+                    Err(EventError::WaitReturnsNoneError)?;
+                }
                 Some(event) => {
                     let e = event.response_type() & !0x80;
                     let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
                     let a = prop.atom();
 
                     if e == xcb::PROPERTY_NOTIFY {
+                        println!("Event Prop!");
                         if a == self.active_win || a == self.wm_name || a == self.vis_name {
                             let active =
                                 xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
                                     .get_reply()?;
+                            println!("AW = {}", active);
                             {
                                 let (pid, cond) = &*pid_cond;
 
                                 match pid.lock() {
                                     Ok(mut p) => {
-                                        *p = xcb_util::ewmh::get_wm_pid(&self.conn, active)
-                                            .get_reply()?
+                                        *p = match active {
+                                            xcb::NONE => None,
+                                            _ => Some(xcb_util::ewmh::get_wm_pid(&self.conn, active).get_reply()?),
+                                        }
                                     }
                                     Err(_) => {
                                         Err(EventError::PosionedMutexError("pid".to_owned()))?
@@ -156,7 +161,7 @@ impl EventHandler {
 
     pub async fn start(
         self,
-        pid_cond: Arc<(Mutex<u32>, Condvar)>,
+        pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
         shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
     ) -> EventResult<()> {
         {
