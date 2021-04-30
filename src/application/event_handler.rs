@@ -110,12 +110,10 @@ impl EventHandler {
                     let a = prop.atom();
 
                     if e == xcb::PROPERTY_NOTIFY {
-                        println!("Event Prop!");
                         if a == self.active_win || a == self.wm_name || a == self.vis_name {
                             let active =
                                 xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
                                     .get_reply()?;
-                            println!("AW = {}", active);
                             {
                                 let (pid, cond) = &*pid_cond;
 

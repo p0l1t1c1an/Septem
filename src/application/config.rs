@@ -36,16 +36,11 @@ pub enum ConfigError {
 #[derive(Clone, Deserialize, Debug)]
 pub struct RecorderConfig {
     productive: Vec<String>,
-    unproductive: Vec<String>,
 }
 
 impl<'a> RecorderConfig {
     pub fn productive(&'a self) -> &'a Vec<String> {
         &self.productive
-    }
-
-    pub fn unproductive(&'a self) -> &'a Vec<String> {
-        &self.unproductive
     }
 }
 
