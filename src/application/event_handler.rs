@@ -7,7 +7,7 @@ use futures::future::{select, Either};
 use tokio::task::JoinError;
 use tokio::{select, try_join};
 
-use xcb::{ConnError, GenericError, GenericEvent};
+use xcb::{ConnError, GenericError};
 use xcb_util::ewmh;
 
 use thiserror::Error;
@@ -99,7 +99,8 @@ impl EventHandler {
         shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
         pid_cond: Arc<(Mutex<u32>, Condvar)>,
     ) -> EventResult<()> {
-        while !shutdown.0.load(Ordering::Relaxed) {
+        while !shutdown.0.load(Ordering::SeqCst) {
+            println!("Event Start!");
             match self.conn.wait_for_event() {
                 None => Err(EventError::WaitReturnsNoneError)?,
                 Some(event) => {
@@ -143,11 +144,11 @@ impl EventHandler {
         match m.lock() {
             Ok(guard) => match c.wait(guard) {
                 Ok(_) => {
-                    shutdown.0.store(true, Ordering::Relaxed);
+                    shutdown.0.store(true, Ordering::SeqCst);
                     println!("Cond End");
                 }
                 Err(_) => Err(EventError::PosionedCondvarError("shutdown".to_owned()))?,
-            },
+            }
             Err(_) => Err(EventError::PosionedMutexError("shutdown".to_owned()))?,
         }
         Ok(())
@@ -165,13 +166,13 @@ impl EventHandler {
             match select(event, stopped).await {
                 Either::Left((left, _)) => left??,
                 Either::Right((right, _)) => right??,
-            };
+            }
         }
 
         let (_, c) = &*pid_cond;
         c.notify_one();
+        
         println!("Very End");
-
         Ok(())
     }
 }

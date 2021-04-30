@@ -38,6 +38,12 @@ pub enum RecorderError {
 
     #[error("{0}")]
     WriteThreadError(#[from] JoinError),
+
+    #[error("The {0} mutex failed to lock")]
+    PosionedMutexError(String),
+
+    #[error("The {0} condvar failed to load")]
+    PosionedCondvarError(String),
 }
 
 pub type RecorderResult<T> = Result<T, RecorderError>;
@@ -55,6 +61,7 @@ pub struct Recorder {
     prev_proc: Option<Process>,
     curr_proc: Option<Process>,
     start_time: SystemTime,
+    write_time: SystemTime,
     proc_times: HashMap<String, u64>,
 }
 
@@ -66,7 +73,6 @@ impl Recorder {
             Some(t) => *t += data.time_focused,
             None => {
                 self.proc_times.insert(data.process_name, data.time_focused);
-                ()
             }
         }
     }
@@ -108,6 +114,7 @@ impl Recorder {
             prev_proc: None,
             curr_proc: None,
             start_time: SystemTime::now(),
+            write_time: SystemTime::now(),
             proc_times: Recorder::parse_data(&share)?,
         })
     }
@@ -133,17 +140,22 @@ impl Recorder {
         if let Some(h) = is_running {
             h.await??;
         }
+        println!("Write!");
         Recorder::write_data(share, proc_times).await?;
         Ok(())
     }
 
     async fn wait_for_event(&mut self, pid: &Mutex<u32>, cond: &Condvar) -> RecorderResult<()> {
-        let mut p = pid.lock().unwrap();
-        p = cond.wait(p).unwrap();
-
-        self.prev_proc = self.curr_proc.clone();
-        self.curr_proc = Some(Process::new(*p as i32)?);
-
+        match pid.lock() {
+            Ok(p) => match cond.wait(p) {
+                Ok(p) => {
+                    self.prev_proc = self.curr_proc.clone();
+                    self.curr_proc = Some(Process::new(*p as i32)?);
+                }
+                Err(_) => Err(RecorderError::PosionedCondvarError("pid".to_owned()))?,
+            }
+            Err(_) => Err(RecorderError::PosionedMutexError("pid".to_owned()))?,
+        } 
         Ok(())
     }
 
@@ -157,33 +169,38 @@ impl Recorder {
             self.share_dir.to_owned(),
             self.proc_times.to_owned(),
         ));
+        self.write_time = SystemTime::now();
 
-        while !shutdown.0.load(Ordering::Relaxed) {
+        while !shutdown.0.load(Ordering::SeqCst) {
             let (pid, cond) = &*pid_cond;
             self.wait_for_event(pid, cond).await?;
+            
             if let Some(p) = self.prev_proc.clone() {
-                let elapsed = self.start_time.elapsed().unwrap().as_secs();
-                if elapsed >= 1 {
-                    self.add_data(Data {
-                        process_name: p.name,
-                        time_focused: elapsed,
-                    });
+                self.add_data(Data {
+                    process_name: p.name,
+                    time_focused: self.start_time.elapsed().unwrap().as_secs(),
+                });
+                
+                let write_elapsed = self.write_time.elapsed().unwrap().as_secs();
+                self.write_time = SystemTime::now();
+
+                if write_elapsed >= 30 {
+                    write_handle = tokio::spawn(Recorder::wait_to_write(
+                        Some(write_handle),
+                        self.share_dir.to_owned(),
+                        self.proc_times.to_owned(),
+                    ));
                 }
             }
-
-            write_handle = tokio::spawn(Recorder::wait_to_write(
-                Some(write_handle),
-                self.share_dir.to_owned(),
-                self.proc_times.to_owned(),
-            ));
-
+     
             for (proc, time) in &self.proc_times {
                 println!("{}: {}", proc, time);
             }
 
             self.start_time = SystemTime::now();
         }
-
+        
+        write_handle.await??;
         Ok(())
     }
 }

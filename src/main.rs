@@ -10,8 +10,8 @@ async fn start() -> Result<(), AppError> {
 
 fn main() -> Result<(), AppError> {
     let run = Runtime::new().unwrap();
-    run.block_on(start())?;
-    run.shutdown_timeout(std::time::Duration::from_millis(10));
+    let to_check = run.block_on(start());
+    run.shutdown_timeout(std::time::Duration::from_millis(10)); 
     println!("Main End");
-    Ok(())
+    to_check
 }
