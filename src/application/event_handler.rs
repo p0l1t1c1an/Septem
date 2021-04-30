@@ -96,10 +96,10 @@ impl EventHandler {
 
     async fn wait_for_event(
         self,
-        shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
+        shutdown: Arc<AtomicBool>,
         pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
     ) -> EventResult<()> {
-        while !shutdown.0.load(Ordering::SeqCst) {
+        while !shutdown.load(Ordering::SeqCst) {
             match self.conn.wait_for_event() {
                 None => {
                     Err(EventError::WaitReturnsNoneError)?;
@@ -144,13 +144,14 @@ impl EventHandler {
     }
 
     async fn wait_for_condition(
-        shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
+        shutdown: Arc<AtomicBool>,
+        condition: Arc<(Mutex<()>, Condvar)>,
     ) -> EventResult<()> {
-        let (_, m, c) = &*shutdown;
+        let (m, c) = &*condition;
         match m.lock() {
             Ok(guard) => match c.wait(guard) {
                 Ok(_) => {
-                    shutdown.0.store(true, Ordering::SeqCst);
+                    shutdown.store(true, Ordering::SeqCst);
                     println!("Cond End");
                 }
                 Err(_) => Err(EventError::PosionedCondvarError("shutdown".to_owned()))?,
@@ -163,11 +164,15 @@ impl EventHandler {
     pub async fn start(
         self,
         pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
-        shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
+        shutdown: Arc<AtomicBool>,
+        condition: Arc<(Mutex<()>, Condvar)>,
     ) -> EventResult<()> {
         {
             let event = tokio::spawn(self.wait_for_event(shutdown.clone(), pid_cond.clone()));
-            let stopped = tokio::spawn(EventHandler::wait_for_condition(shutdown.clone()));
+            let stopped = tokio::spawn(EventHandler::wait_for_condition(
+                shutdown.clone(),
+                condition.clone(),
+            ));
 
             match select(event, stopped).await {
                 Either::Left((left, _)) => left??,

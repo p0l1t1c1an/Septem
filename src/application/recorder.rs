@@ -185,7 +185,7 @@ impl Recorder {
     pub async fn start(
         mut self,
         pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
-        shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
+        shutdown: Arc<AtomicBool>,
     ) -> RecorderResult<()> {
         let mut write_handle = tokio::spawn(Recorder::wait_to_write(
             None,
@@ -194,7 +194,7 @@ impl Recorder {
         ));
         self.write_time = SystemTime::now();
 
-        while !shutdown.0.load(Ordering::SeqCst) {
+        while !shutdown.load(Ordering::SeqCst) {
             let (pid, cond) = &*pid_cond;
             self.wait_for_event(pid, cond).await?;
 

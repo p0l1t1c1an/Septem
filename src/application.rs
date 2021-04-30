@@ -1,3 +1,4 @@
+mod alert;
 mod config;
 mod event_handler;
 mod process;
@@ -41,7 +42,7 @@ pub enum AppError {
 
 type AppResult<T> = Result<T, AppError>;
 
-pub async fn init() -> AppResult<Server> {
+async fn init() -> AppResult<Server> {
     let c = Config::new(None)?;
     println!("{:#?}", c);
 
@@ -50,16 +51,18 @@ pub async fn init() -> AppResult<Server> {
     let s = SignalHandler::new()?;
 
     let pid = Arc::new((Mutex::new(None), Condvar::new()));
-    let shutdown = Arc::new((AtomicBool::new(false), Mutex::new(()), Condvar::new()));
+    let shut = Arc::new(AtomicBool::new(false));
+    let sig = Arc::new((Mutex::new(()), Condvar::new()));
 
     Ok(Server::new(vec![
-        Client::EventClient(Arc::clone(&pid), Arc::clone(&shutdown), e),
-        Client::RecorderClient(pid, Arc::clone(&shutdown), r),
-        Client::SignalClient(shutdown, s),
+        Client::EventClient(Arc::clone(&pid), Arc::clone(&shut), Arc::clone(&sig), e),
+        Client::RecorderClient(pid, Arc::clone(&shut), r),
+        Client::SignalClient(shut, sig, s),
     ]))
 }
 
-pub async fn start(server: Server) -> Result<(), AppError> {
+pub async fn start() -> Result<(), AppError> {
+    let server = init().await?;
     let join_clients = server.start_clients().await;
     let errors = try_join_all(join_clients).await?;
     for e in errors.into_iter() {

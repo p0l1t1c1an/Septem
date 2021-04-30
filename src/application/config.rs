@@ -25,19 +25,26 @@ pub enum ConfigError {
     TomlError(#[from] toml::de::Error),
 }
 
+// Todo: Add Enum and alert type for config
+// It can be a pop up message or play audio
+// Rn, I will just make it println! a message
+
 #[derive(Clone, Deserialize, Debug)]
 pub struct AlertConfig {
     delay: u64,
     trigger_time: u64,
+    message: String,
 }
 
 impl Default for AlertConfig {
     fn default() -> Self {
         Self {
-            delay: 5, // 5 seconds deley
+            delay: 5,         // 5 seconds deley
             trigger_time: 20, // 20 minute trigger
+            message: "You have been wasting time for {time} minutes.\nPlease get off of {name}."
+                .to_owned(),
         }
-    } 
+    }
 }
 
 impl AlertConfig {
@@ -48,6 +55,10 @@ impl AlertConfig {
     pub fn trigger_time(&self) -> u64 {
         self.trigger_time
     }
+
+    pub fn message(&self) -> &String {
+        &self.message
+    }
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -55,8 +66,8 @@ pub struct RecorderConfig {
     productive: Vec<String>,
 }
 
-impl<'a> RecorderConfig {
-    pub fn productive(&'a self) -> &'a Vec<String> {
+impl RecorderConfig {
+    pub fn productive(&self) -> &Vec<String> {
         &self.productive
     }
 }
@@ -116,8 +127,8 @@ pub struct DateTimeConfig {
     stop_hour: Option<u8>,
 }
 
-impl<'a> DateTimeConfig {
-    pub fn dates(&'a self) -> &'a Vec<Date> {
+impl DateTimeConfig {
+    pub fn dates(&self) -> &Vec<Date> {
         &self.dates
     }
 

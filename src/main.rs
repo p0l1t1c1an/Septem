@@ -3,8 +3,9 @@ use application::AppError;
 
 use tokio::runtime::Runtime;
 
+// Async closures are unstable so ...
 async fn start() -> Result<(), AppError> {
-    application::start(application::init().await?).await?;
+    application::start().await?;
     Ok(())
 }
 

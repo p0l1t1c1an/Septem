@@ -39,13 +39,17 @@ impl SignalHandler {
         })
     }
 
-    pub async fn start(self, shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>) -> SignalResult<()> {
+    pub async fn start(
+        self,
+        shutdown: Arc<AtomicBool>,
+        condition: Arc<(Mutex<()>, Condvar)>,
+    ) -> SignalResult<()> {
         let mut signals = self.signals.fuse();
         while let Some(sig) = signals.next().await {
             match sig {
                 SIGHUP | SIGTERM | SIGINT | SIGQUIT => {
-                    shutdown.0.store(true, Ordering::SeqCst);
-                    let (_, _, c) = &*shutdown;
+                    shutdown.store(true, Ordering::SeqCst);
+                    let (_, c) = &*condition;
                     c.notify_one();
                     self.handle.close();
                     break;
