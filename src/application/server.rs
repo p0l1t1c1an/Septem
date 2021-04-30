@@ -1,5 +1,5 @@
-#[allow(dead_code)]
-#[allow(unused_variables)]
+#![allow(dead_code)]
+
 use crate::application::{
     event_handler::{EventError, EventHandler},
     process,

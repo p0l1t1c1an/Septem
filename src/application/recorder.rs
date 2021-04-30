@@ -1,5 +1,4 @@
-#[allow(dead_code)]
-#[allow(unused_variables)]
+
 use crate::application::process;
 use process::{Process, ProcessError};
 use tokio::task::{JoinError, JoinHandle};

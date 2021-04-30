@@ -5,7 +5,7 @@ use std::sync::{
 
 use futures::future::{select, Either};
 use tokio::task::JoinError;
-use tokio::{select, try_join};
+//use tokio::{select, try_join};
 
 use xcb::{ConnError, GenericError};
 use xcb_util::ewmh;
