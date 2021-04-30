@@ -25,13 +25,30 @@ pub enum ConfigError {
     TomlError(#[from] toml::de::Error),
 }
 
-/*
- * TODO:
- *
- * Alert System Configurations
- *
- *
- */
+#[derive(Clone, Deserialize, Debug)]
+pub struct AlertConfig {
+    delay: u64,
+    trigger_time: u64,
+}
+
+impl Default for AlertConfig {
+    fn default() -> Self {
+        Self {
+            delay: 5, // 5 seconds deley
+            trigger_time: 20, // 20 minute trigger
+        }
+    } 
+}
+
+impl AlertConfig {
+    pub fn delay(&self) -> u64 {
+        self.delay
+    }
+
+    pub fn trigger_time(&self) -> u64 {
+        self.trigger_time
+    }
+}
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RecorderConfig {
@@ -118,6 +135,7 @@ pub struct Config {
     shared_dir: Option<String>,
     blacklist: Option<DateTimeConfig>,
     recorder: RecorderConfig,
+    alert: Option<AlertConfig>,
 }
 
 impl Config {
@@ -148,5 +166,9 @@ impl Config {
 
     pub fn recorder_config(&self) -> RecorderConfig {
         self.recorder.to_owned()
+    }
+
+    pub fn alert_config(&self) -> AlertConfig {
+        self.alert.to_owned().unwrap_or_default()
     }
 }
