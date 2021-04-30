@@ -1,5 +1,6 @@
-
+use crate::application::config::RecorderConfig;
 use crate::application::process;
+
 use process::{Process, ProcessError};
 use tokio::task::{JoinError, JoinHandle};
 
@@ -53,15 +54,17 @@ pub type RecorderResult<T> = Result<T, RecorderError>;
 struct Data {
     process_name: String,
     time_focused: u64,
+    is_productive: bool,
 }
 
 pub struct Recorder {
+    config: RecorderConfig,
     share_dir: String,
     prev_proc: Option<Process>,
     curr_proc: Option<Process>,
     start_time: SystemTime,
     write_time: SystemTime,
-    proc_times: HashMap<String, u64>,
+    proc_times: HashMap<String, (u64, bool)>,
 }
 
 impl Recorder {
@@ -69,9 +72,13 @@ impl Recorder {
 
     fn add_data(&mut self, data: Data) {
         match self.proc_times.get_mut(&data.process_name) {
-            Some(t) => *t += data.time_focused,
+            Some((t, p)) => {
+                *t += data.time_focused;
+                *p = data.is_productive;
+            }
             None => {
-                self.proc_times.insert(data.process_name, data.time_focused);
+                self.proc_times
+                    .insert(data.process_name, (data.time_focused, data.is_productive));
             }
         }
     }
@@ -80,7 +87,7 @@ impl Recorder {
         if path.is_dir() {
             let data = path.join(DATA_FILE);
             let mut f = File::create(data)?;
-            f.write_all(b"process_name,time_focused")?;
+            f.write_all(b"process_name,time_focused,is_productive")?;
             Ok(())
         } else {
             Err(RecorderError::PathDoesNotExistError(
@@ -89,7 +96,10 @@ impl Recorder {
         }
     }
 
-    fn parse_data(share: &String) -> RecorderResult<HashMap<String, u64>> {
+    fn parse_data(
+        share: &String,
+        productive: &Vec<String>,
+    ) -> RecorderResult<HashMap<String, (u64, bool)>> {
         let path = Path::new(share);
         let data = path.join(DATA_FILE);
 
@@ -98,7 +108,8 @@ impl Recorder {
             let mut map = HashMap::new();
             for r in reader.into_deserialize() {
                 let data: Data = r?;
-                map.insert(data.process_name, data.time_focused);
+                let prod = productive.contains(&data.process_name);
+                map.insert(data.process_name, (data.time_focused, prod));
             }
             Ok(map)
         } else {
@@ -107,25 +118,32 @@ impl Recorder {
         }
     }
 
-    pub fn new(share: String) -> RecorderResult<Recorder> {
+    pub fn new(share: String, conf: RecorderConfig) -> RecorderResult<Recorder> {
+        let map = Recorder::parse_data(&share, conf.productive())?;
+
         Ok(Recorder {
+            config: conf,
             share_dir: share.to_owned(),
             prev_proc: None,
             curr_proc: None,
             start_time: SystemTime::now(),
             write_time: SystemTime::now(),
-            proc_times: Recorder::parse_data(&share)?,
+            proc_times: map,
         })
     }
 
     // Async Functions
 
-    async fn write_data(share: String, proc_times: HashMap<String, u64>) -> RecorderResult<()> {
+    async fn write_data(
+        share: String,
+        proc_times: HashMap<String, (u64, bool)>,
+    ) -> RecorderResult<()> {
         let mut writer = WriterBuilder::new().from_path(Path::new(&share).join(DATA_FILE))?;
-        for (name, time) in proc_times.into_iter() {
+        for (name, (time, prod)) in proc_times.into_iter() {
             writer.serialize(Data {
                 process_name: name,
                 time_focused: time,
+                is_productive: prod,
             })?;
         }
         Ok(())
@@ -134,12 +152,11 @@ impl Recorder {
     async fn wait_to_write(
         is_running: Option<JoinHandle<RecorderResult<()>>>,
         share: String,
-        proc_times: HashMap<String, u64>,
+        proc_times: HashMap<String, (u64, bool)>,
     ) -> RecorderResult<()> {
         if let Some(h) = is_running {
             h.await??;
         }
-        println!("Write!");
         Recorder::write_data(share, proc_times).await?;
         Ok(())
     }
@@ -182,9 +199,11 @@ impl Recorder {
             self.wait_for_event(pid, cond).await?;
 
             if let Some(p) = self.prev_proc.clone() {
+                let prod = self.config.productive().contains(&p.name);
                 self.add_data(Data {
                     process_name: p.name,
                     time_focused: self.start_time.elapsed().unwrap().as_secs(),
+                    is_productive: prod,
                 });
 
                 let write_elapsed = self.write_time.elapsed().unwrap().as_secs();
@@ -199,8 +218,8 @@ impl Recorder {
                 }
             }
 
-            for (proc, time) in &self.proc_times {
-                println!("{}: {}", proc, time);
+            for (proc, (time, prod)) in &self.proc_times {
+                println!("{}, {}, {}", proc, time, prod);
             }
 
             self.start_time = SystemTime::now();

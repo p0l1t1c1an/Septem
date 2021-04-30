@@ -45,7 +45,7 @@ pub async fn init() -> AppResult<Server> {
     let c = Config::new(None)?;
     println!("{:#?}", c);
 
-    let r = Recorder::new(c.shared_dir()?)?;
+    let r = Recorder::new(c.shared_dir()?, c.recorder_config())?;
     let e = EventHandler::new()?;
     let s = SignalHandler::new()?;
 
