@@ -42,7 +42,9 @@ pub enum AppError {
 type AppResult<T> = Result<T, AppError>;
 
 pub async fn init() -> AppResult<Server> {
-    let c = Config::new(None)?;    
+    let c = Config::new(None)?;
+    println!("{:#?}", c);
+
     let r = Recorder::new(c.shared_dir()?)?;
     let e = EventHandler::new()?;
     let s = SignalHandler::new()?;

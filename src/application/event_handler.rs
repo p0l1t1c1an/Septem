@@ -27,8 +27,11 @@ pub enum EventError {
     #[error("Wait_for_event returned None")]
     WaitReturnsNoneError,
 
-    #[error("The pid mutex failed to load")]
-    PosionedMutexError,
+    #[error("The {0} mutex failed to lock")]
+    PosionedMutexError(String),
+
+    #[error("The {0} condvar failed to load")]
+    PosionedCondvarError(String),
 
     #[error("{0}")]
     SelectError(#[from] JoinError),
@@ -117,7 +120,9 @@ impl EventHandler {
                                         *p = xcb_util::ewmh::get_wm_pid(&self.conn, active)
                                             .get_reply()?
                                     }
-                                    Err(_) => Err(EventError::PosionedMutexError)?,
+                                    Err(_) => {
+                                        Err(EventError::PosionedMutexError("pid".to_owned()))?
+                                    }
                                 }
 
                                 cond.notify_one();
@@ -135,11 +140,17 @@ impl EventHandler {
         shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
     ) -> EventResult<()> {
         let (_, m, c) = &*shutdown;
-        let mut guard = m.lock().unwrap();
-        guard = c.wait(guard).unwrap();
-        shutdown.0.store(true, Ordering::Relaxed);
-        println!("Cond End");
-        Err(EventError::WaitReturnsNoneError)
+        match m.lock() {
+            Ok(guard) => match c.wait(guard) {
+                Ok(_) => {
+                    shutdown.0.store(true, Ordering::Relaxed);
+                    println!("Cond End");
+                }
+                Err(_) => Err(EventError::PosionedCondvarError("shutdown".to_owned()))?,
+            },
+            Err(_) => Err(EventError::PosionedMutexError("shutdown".to_owned()))?,
+        }
+        Ok(())
     }
 
     pub async fn start(
@@ -151,9 +162,9 @@ impl EventHandler {
             let event = tokio::spawn(self.wait_for_event(shutdown.clone(), pid_cond.clone()));
             let stopped = tokio::spawn(EventHandler::wait_for_condition(shutdown.clone()));
 
-            let n = match select(event, stopped).await {
-                Either::Left(_) => 1,
-                Either::Right(_) => 2,
+            match select(event, stopped).await {
+                Either::Left((left, _)) => left??,
+                Either::Right((right, _)) => right??,
             };
         }
 
