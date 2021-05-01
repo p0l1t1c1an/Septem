@@ -1,11 +1,7 @@
-use crate::application::client::{Client, ClientResult, Shutdown};
+use crate::application::client::{Client, ClientResult};
 use crate::application::config::AlertConfig;
 
-use std::sync::atomic::Ordering;
-use crossbeam::channel::{Receiver, TryRecvError};
-
-use std::time::Duration;
-use tokio::time::sleep;
+use tokio::sync::mpsc::Receiver;
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -22,8 +18,7 @@ pub enum AlertError {
 pub type AlertResult<T> = Result<T, AlertError>;
 
 pub struct Alerter {
-    is_prod: Receiver<bool>,
-    shutdown: Shutdown,
+    is_prod: Receiver<(bool, u64)>,
     config: AlertConfig,
     productive: u64,
     unproductive: u64,
@@ -38,11 +33,10 @@ impl Alerter {
         }
     }
 
-    pub fn new(conf: AlertConfig, shutdown: Shutdown, is_prod: Receiver<bool>) -> AlertResult<Alerter> {
+    pub fn new(conf: AlertConfig, is_prod: Receiver<(bool, u64)>) -> AlertResult<Alerter> {
         Alerter::sanity_check_conf(&conf)?;
         Ok(Alerter {
             is_prod: is_prod,
-            shutdown: shutdown,
             config: conf,
             productive: 0,
             unproductive: 0,
@@ -53,35 +47,27 @@ impl Alerter {
 #[async_trait]
 impl Client for Alerter {
     async fn start(mut self) -> ClientResult {
-        while !self.shutdown.load(Ordering::SeqCst) {
-            match self.is_prod.try_recv() {
-                Ok(p) => {
-                    if p { 
-                        self.productive += self.config.delay();
-                    }
-                    else {
-                        self.unproductive += self.config.delay();
-                    }
-                    
-                    if self.productive >= self.config.productive_time() * 60 {
-                        self.productive = 0;
-                        self.unproductive = 0;
-                    }
-                    else if self.unproductive >= self.config.unproductive_time() * 60 {
-                        self.productive = 0;
-                        self.unproductive = 0;
-                        println!("{}", self.config.message());
-                    }
+        while let Some((prod, time)) = self.is_prod.recv().await {
+            if prod {
+                println!("True");
+                self.productive += time;
+                if self.productive >= self.config.productive_time() * 60 {
+                    self.productive = 0;
+                    self.unproductive = 0;
                 }
-                Err(e) => match e {
-                    TryRecvError::Empty => { }
-                    TryRecvError::Disconnected => Err(AlertError::ReceiverError)?,
+
+            } else {
+                println!("False");
+                self.unproductive += time;
+                if self.unproductive >= self.config.unproductive_time() * 60 {
+                    self.productive = 0;
+                    self.unproductive = 0;
+                    println!("{}", self.config.message());
                 }
             }
-            
-            sleep(Duration::from_secs(self.config.delay())).await;
-                    
         }
+
         Ok(())
     }
 }
+            

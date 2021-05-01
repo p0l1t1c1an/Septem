@@ -16,10 +16,10 @@ use signal_handler::{SignalError, SignalHandler};
 use futures::future::try_join_all;
 use tokio::task::JoinError;
 use tokio::spawn;
+use tokio::sync::mpsc::channel;
 
 use std::sync::{atomic::AtomicBool, Arc, Condvar, Mutex};
 
-use crossbeam::channel::bounded;
 
 use thiserror::Error;
 
@@ -56,14 +56,13 @@ pub async fn start() -> AppResult<()> {
     let pid = Arc::new((Mutex::new(None), Condvar::new()));
     let shut = Arc::new(AtomicBool::new(false));
     let cond = Arc::new((Mutex::new(()), Condvar::new()));
-    let (tx, rx) = bounded(1);
+    let (tx, rx) = channel(1);
 
     let e = EventHandler::new(Arc::clone(&pid), Arc::clone(&shut), Arc::clone(&cond))?;
     let s = SignalHandler::new(Arc::clone(&shut), Arc::clone(&cond))?;
     
     let r = Recorder::new(c.shared_dir()?, c.recorder_config(), Arc::clone(&pid), Arc::clone(&shut), tx)?;
-    let a = Alerter::new(c.alert_config(), Arc::clone(&shut), rx)?;
-
+    let a = Alerter::new(c.alert_config(), rx)?;
 
     let join_clients = vec![spawn(e.start()), spawn(s.start()), spawn(r.start()), spawn(a.start())];
 
