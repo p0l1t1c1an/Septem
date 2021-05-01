@@ -4,19 +4,16 @@ use crate::application::process;
 
 use process::{Process, ProcessError};
 
-use tokio::task::{JoinError, JoinHandle};
-use tokio::time::sleep;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
+use tokio::task::{JoinError, JoinHandle};
+use tokio::time::sleep;
 
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
-use std::{
-    collections::HashMap,
-    sync::atomic::Ordering,
-};
+use std::{collections::HashMap, sync::atomic::Ordering};
 
 use async_trait::async_trait;
 use csv::{ReaderBuilder, WriterBuilder};
@@ -130,7 +127,13 @@ impl Recorder {
         }
     }
 
-    pub fn new(share: String, conf: RecorderConfig, pid: Pid, shutdown: Shutdown, is_prod: mpsc::Sender<(bool, u64)>) -> RecorderResult<Recorder> {
+    pub fn new(
+        share: String,
+        conf: RecorderConfig,
+        pid: Pid,
+        shutdown: Shutdown,
+        is_prod: mpsc::Sender<(bool, u64)>,
+    ) -> RecorderResult<Recorder> {
         let map = Recorder::parse_data(&share, conf.productive())?;
 
         Ok(Recorder {
@@ -195,18 +198,23 @@ impl Recorder {
     }
 
     async fn delay_send_alert(
-        shutdown: Shutdown, 
-        is_prod: mpsc::Sender<(bool, u64)>, 
-        productive: watch::Receiver<bool>, 
+        shutdown: Shutdown,
+        is_prod: mpsc::Sender<(bool, u64)>,
+        productive: watch::Receiver<bool>,
         delay: u64,
     ) -> RecorderResult<()> {
+        let mut count = 0;
         while !shutdown.load(Ordering::SeqCst) {
-            tokio::time::sleep(Duration::from_secs(delay)).await;
-            {
+            tokio::time::sleep(Duration::from_millis(delay * 100)).await;
+            count += 1;
+            if count >= 10 {
                 let prod = *productive.borrow();
-            
-                if let Ok(_) = is_prod.send((prod, delay)).await { }
-                else { Err(RecorderError::SenderError)?; } 
+                //println!("Got: {}", prod);
+                if let Ok(_) = is_prod.send((prod, delay)).await {
+                } else {
+                    Err(RecorderError::SenderError)?;
+                }
+                count = 0;
             }
         }
         Ok(())
@@ -219,11 +227,12 @@ impl Client for Recorder {
         let (prod_sender, prod_rcvr) = watch::channel(false);
         if let Some(is_prod) = std::mem::replace(&mut self.is_prod, None) {
             let alert_handle = tokio::spawn(Recorder::delay_send_alert(
-                self.shutdown.clone(), 
-                is_prod, 
-                prod_rcvr, 
-                5));
-       
+                self.shutdown.clone(),
+                is_prod,
+                prod_rcvr,
+                5,
+            ));
+
             let mut write_handle = tokio::spawn(Recorder::wait_to_write(
                 None,
                 self.share_dir.to_owned(),
@@ -234,11 +243,21 @@ impl Client for Recorder {
             while !self.shutdown.load(Ordering::SeqCst) {
                 self.wait_for_event().await?;
 
+                if let Some(p) = self.curr_proc.clone() {
+                    let prod = self.config.productive().contains(&p.name);
+                    if let Ok(_) = prod_sender.send(prod) {
+                    } else {
+                        Err(RecorderError::SenderError)?;
+                    }
+                } else {
+                    if let Ok(_) = prod_sender.send(false) {
+                    } else {
+                        Err(RecorderError::SenderError)?;
+                    }
+                }
+
                 if let Some(p) = self.prev_proc.clone() {
                     let prod = self.config.productive().contains(&p.name);
-                    
-                    if let Ok(_) = prod_sender.send(prod) { }
-                    else { Err(RecorderError::SenderError)?; }
 
                     self.add_data(Data {
                         process_name: p.name,
@@ -264,13 +283,14 @@ impl Client for Recorder {
 
                 self.start_time = SystemTime::now();
             }
-            
+
             prod_sender.closed().await;
             alert_handle.await??;
 
             write_handle.await??;
             Ok(())
-    
-        } else { Err(RecorderError::MpscExistenceError)? }
+        } else {
+            Err(RecorderError::MpscExistenceError)?
+        }
     }
 }

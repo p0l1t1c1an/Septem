@@ -49,15 +49,14 @@ impl Client for Alerter {
     async fn start(mut self) -> ClientResult {
         while let Some((prod, time)) = self.is_prod.recv().await {
             if prod {
-                println!("True");
+                //println!("True");
                 self.productive += time;
                 if self.productive >= self.config.productive_time() * 60 {
                     self.productive = 0;
                     self.unproductive = 0;
                 }
-
             } else {
-                println!("False");
+                //println!("False");
                 self.unproductive += time;
                 if self.unproductive >= self.config.unproductive_time() * 60 {
                     self.productive = 0;
@@ -70,4 +69,3 @@ impl Client for Alerter {
         Ok(())
     }
 }
-            

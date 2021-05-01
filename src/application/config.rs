@@ -40,11 +40,10 @@ pub struct AlertConfig {
 impl Default for AlertConfig {
     fn default() -> Self {
         Self {
-            delay: 5,         // 5 seconds deley
-            productive_time: 5, // Resets at 5 minutes
+            delay: 5,              // 5 seconds deley
+            productive_time: 5,    // Resets at 5 minutes
             unproductive_time: 20, // Prints message at 5 minutes
-            message: "You have been wasting time.\nPlease start being productive."
-                .to_owned(),
+            message: "You have been wasting time.\nPlease start being productive.".to_owned(),
         }
     }
 }

@@ -4,8 +4,8 @@ use futures::stream::StreamExt;
 use signal_hook::consts::signal::*;
 use signal_hook_tokio::{Handle, Signals};
 
-use std::sync::atomic::Ordering;
 use std::io;
+use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use thiserror::Error;

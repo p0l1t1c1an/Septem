@@ -1,4 +1,3 @@
-
 use crate::application::client::{Client, ClientResult, Condition, Pid, Shutdown};
 
 use std::sync::atomic::Ordering;
@@ -154,7 +153,7 @@ impl EventHandler {
             },
             Err(_) => Err(EventError::PosionedMutexError("shutdown".to_owned()))?,
         }
-        
+
         let (_, c) = &*pid;
         c.notify_one();
         Ok(())
