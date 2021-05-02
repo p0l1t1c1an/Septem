@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 
+use chrono::Weekday;
 use serde_derive::Deserialize;
 
 use thiserror::Error;
@@ -25,39 +26,35 @@ pub enum ConfigError {
     TomlError(#[from] toml::de::Error),
 }
 
+pub type Hours = (Weekday, u8, u8); 
+
 // Todo: Add Enum and alert type for config
 // It can be a pop up message or play audio
 // Rn, I will just make it println! a message
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct AlertConfig {
-    delay: u64,
-    productive_time: u64,
-    unproductive_time: u64,
+    productive_time: f64,
+    unproductive_time: f64,
     message: String,
 }
 
 impl Default for AlertConfig {
     fn default() -> Self {
         Self {
-            delay: 5,              // 5 seconds deley
-            productive_time: 5,    // Resets at 5 minutes
-            unproductive_time: 20, // Prints message at 5 minutes
+            productive_time: 5.0,    // Resets at 5 minutes
+            unproductive_time: 20.0, // Prints message at 5 minutes
             message: "You have been wasting time.\nPlease start being productive.".to_owned(),
         }
     }
 }
 
 impl AlertConfig {
-    pub fn delay(&self) -> u64 {
-        self.delay
-    }
-
-    pub fn productive_time(&self) -> u64 {
+    pub fn productive_time(&self) -> f64 {
         self.productive_time
     }
 
-    pub fn unproductive_time(&self) -> u64 {
+    pub fn unproductive_time(&self) -> f64 {
         self.unproductive_time
     }
 
@@ -68,12 +65,22 @@ impl AlertConfig {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RecorderConfig {
+    notify_delay: u64,
+    write_delay: u64,
     productive: Vec<String>,
 }
 
 impl RecorderConfig {
     pub fn productive(&self) -> &Vec<String> {
         &self.productive
+    }
+
+    pub fn notify_delay(&self) -> u64 {
+        self.notify_delay
+    }
+
+    pub fn write_delay(&self) -> u64 {
+        self.write_delay
     }
 }
 
@@ -82,23 +89,21 @@ impl RecorderConfig {
 pub enum Date {
     MonthWeekDay { month: u8, week: u8, day: u8 },
     MonthDay { month: u8, day: u8 },
-    WeekDay { week: u8, day: u8 },
 }
 
 impl Date {
-    fn month(&self) -> Option<u8> {
+    pub fn month(&self) -> u8 {
         match *self {
             Self::MonthWeekDay {
                 month,
                 week: _,
                 day: _,
-            } => Some(month),
-            Self::MonthDay { month, day: _ } => Some(month),
-            Self::WeekDay { week: _, day: _ } => None,
+            } => month,
+            Self::MonthDay { month, day: _ } => month,
         }
     }
 
-    fn week(&self) -> Option<u8> {
+    pub fn week(&self) -> Option<u8> {
         match *self {
             Self::MonthWeekDay {
                 month: _,
@@ -106,13 +111,12 @@ impl Date {
                 day: _,
             } => Some(week),
             Self::MonthDay { month: _, day: _ } => None,
-            Self::WeekDay { week, day: _ } => Some(week),
         }
     }
 
-    // MWD and WD are day of the week
+    // MWD are day of the week
     // MD is day of the month
-    fn day(&self) -> u8 {
+    pub fn day(&self) -> u8 {
         match *self {
             Self::MonthWeekDay {
                 month: _,
@@ -120,37 +124,31 @@ impl Date {
                 day,
             } => day,
             Self::MonthDay { month: _, day } => day,
-            Self::WeekDay { week: _, day } => day,
         }
     }
 }
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct DateTimeConfig {
-    dates: Vec<Date>,
-    start_hour: Option<u8>, // 24 hour time
-    stop_hour: Option<u8>,
+    disabled_days: Vec<Date>,
+    start_hours: Vec<Hours>,
 }
 
 impl DateTimeConfig {
     pub fn dates(&self) -> &Vec<Date> {
-        &self.dates
+        &self.disabled_days
     }
 
-    pub fn start_hour(&self) -> u8 {
-        self.start_hour.unwrap_or(0)
-    }
-
-    pub fn stop_hour(&self) -> u8 {
-        self.stop_hour.unwrap_or(0)
+    pub fn start_hours(&self) -> &Vec<Hours> {
+        &self.start_hours
     }
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
-    shared_dir: Option<String>,
-    blacklist: Option<DateTimeConfig>,
+    share_directory: Option<String>,
     recorder: RecorderConfig,
+    date_and_time: Option<DateTimeConfig>,
     alert: Option<AlertConfig>,
 }
 
@@ -168,20 +166,20 @@ impl Config {
         Ok(toml::from_str(config_contents.as_str())?)
     }
 
-    pub fn shared_dir(&self) -> Result<String, ConfigError> {
-        let share_dir = self.shared_dir.to_owned();
-        match share_dir {
+    pub fn share(&self) -> Result<String, ConfigError> {
+        let share = self.share_directory.to_owned();
+        match share {
             Some(s) => Ok(s),
             None => Ok(env::var("HOME")? + DEFAULT_SHARE),
         }
     }
 
-    pub fn blacklists_dates(&self) -> DateTimeConfig {
-        self.blacklist.to_owned().unwrap_or_default()
-    }
-
     pub fn recorder_config(&self) -> RecorderConfig {
         self.recorder.to_owned()
+    }
+    
+    pub fn date_config(&self) -> DateTimeConfig {
+        self.date_and_time.to_owned().unwrap_or_default()
     }
 
     pub fn alert_config(&self) -> AlertConfig {

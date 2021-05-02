@@ -19,8 +19,8 @@ pub type AlertResult<T> = Result<T, AlertError>;
 pub struct Alerter {
     is_prod: Receiver<(bool, u64)>,
     config: AlertConfig,
-    productive: u64,
-    unproductive: u64,
+    productive: f64,
+    unproductive: f64,
 }
 
 impl Alerter {
@@ -37,8 +37,8 @@ impl Alerter {
         Ok(Alerter {
             is_prod,
             config,
-            productive: 0,
-            unproductive: 0,
+            productive: 0.0,
+            unproductive: 0.0,
         })
     }
 }
@@ -48,18 +48,16 @@ impl Client for Alerter {
     async fn start(mut self) -> ClientResult {
         while let Some((prod, time)) = self.is_prod.recv().await {
             if prod {
-                //println!("True");
-                self.productive += time;
-                if self.productive >= self.config.productive_time() * 60 {
-                    self.productive = 0;
-                    self.unproductive = 0;
+                self.productive += time as f64 / 1000.0;
+                if self.productive >= self.config.productive_time() * 60.0 {
+                    self.productive = 0.0;
+                    self.unproductive = 0.0;
                 }
             } else {
-                //println!("False");
-                self.unproductive += time;
-                if self.unproductive >= self.config.unproductive_time() * 60 {
-                    self.productive = 0;
-                    self.unproductive = 0;
+                self.unproductive += time as f64 / 1000.0;
+                if self.unproductive >= self.config.unproductive_time() * 60.0 {
+                    self.productive = 0.0;
+                    self.unproductive = 0.0;
                     println!("{}", self.config.message());
                 }
             }

@@ -1,6 +1,7 @@
 mod alert;
 mod client;
 mod config;
+mod date_checker;
 mod event_handler;
 mod process;
 mod recorder;
@@ -9,6 +10,7 @@ mod signal_handler;
 use alert::{AlertError, Alerter};
 use client::{Client, ClientError};
 use config::{Config, ConfigError};
+use date_checker::DateError;
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use signal_handler::{SignalError, SignalHandler};
@@ -37,6 +39,9 @@ pub enum AppError {
     StartUpConfigError(#[from] ConfigError),
 
     #[error("{0}")]
+    StartUpDateError(#[from] DateError),    
+
+    #[error("{0}")]
     StartUpRecorderError(#[from] RecorderError),
 
     #[error("{0}")]
@@ -50,22 +55,25 @@ type AppResult<T> = Result<T, AppError>;
 
 pub async fn start() -> AppResult<()> {
     let config = Config::new(None)?;
+    date_checker::sanity_check(&config.date_config())?;
     let pid = Arc::new((Mutex::new(None), Condvar::new()));
     let shut = Arc::new(AtomicBool::new(false));
     let cond = Arc::new((Mutex::new(()), Condvar::new()));
     let (tx, rx) = channel(1);
 
     let event = EventHandler::new(Arc::clone(&pid), Arc::clone(&shut), Arc::clone(&cond))?;
-    let signal = SignalHandler::new(Arc::clone(&shut), Arc::clone(&cond))?;
+    let signal = SignalHandler::new(Arc::clone(&shut), cond)?;
 
     let recorder = Recorder::new(
-        config.shared_dir()?,
+        config.share()?,
         config.recorder_config(),
-        Arc::clone(&pid),
-        Arc::clone(&shut),
+        pid,
+        shut,
         tx,
     )?;
     let alert = Alerter::new(config.alert_config(), rx)?;
+    
+    drop(config);
 
     let join_clients = vec![
         spawn(event.start()),

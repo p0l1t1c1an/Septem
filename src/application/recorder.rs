@@ -207,17 +207,11 @@ impl Recorder {
         productive: watch::Receiver<bool>,
         delay: u64,
     ) -> RecorderResult<()> {
-        let mut count = 0;
         while !shutdown.load(Ordering::SeqCst) {
-            sleep(Duration::from_millis(delay * 100)).await;
-            count += 1;
-            if count >= 10 {
-                let prod = *productive.borrow();
-                //println!("Got: {}", prod);
-                if is_prod.send((prod, delay)).await.is_err() {
-                    return Err(RecorderError::SenderError);
-                }
-                count = 0;
+            sleep(Duration::from_millis(delay)).await;
+            let prod = *productive.borrow();
+            if is_prod.send((prod, delay)).await.is_err() {
+                return Err(RecorderError::SenderError);
             }
         }
         Ok(())
@@ -233,7 +227,7 @@ impl Client for Recorder {
                 self.shutdown.clone(),
                 is_prod,
                 prod_rcvr,
-                5,
+                self.config.notify_delay(),
             ));
 
             let mut write_handle = tokio::spawn(Recorder::wait_to_write(
@@ -267,7 +261,7 @@ impl Client for Recorder {
                     let write_elapsed = self.write_time.elapsed().unwrap().as_secs();
                     self.write_time = SystemTime::now();
 
-                    if write_elapsed >= 30 {
+                    if write_elapsed >= self.config.write_delay() {
                         write_handle = tokio::spawn(Recorder::wait_to_write(
                             Some(write_handle),
                             self.share_dir.to_owned(),
