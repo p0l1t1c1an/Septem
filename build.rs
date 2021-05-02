@@ -1,5 +1,3 @@
-use cc;
-
 fn main() {
     if cfg!(target_os = "freebsd") {
         cc::Build::new()
