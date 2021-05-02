@@ -1,17 +1,21 @@
+mod alert;
+mod client;
 mod config;
 mod event_handler;
 mod process;
 mod recorder;
-pub mod server;
 mod signal_handler;
 
+use alert::{AlertError, Alerter};
+use client::{Client, ClientError};
 use config::{Config, ConfigError};
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
-use server::{Client, ClientError, Server};
 use signal_handler::{SignalError, SignalHandler};
 
 use futures::future::try_join_all;
+use tokio::spawn;
+use tokio::sync::mpsc::channel;
 use tokio::task::JoinError;
 
 use std::sync::{atomic::AtomicBool, Arc, Condvar, Mutex};
@@ -25,6 +29,9 @@ pub enum AppError {
 
     #[error("{0}")]
     RunningClientError(#[from] ClientError),
+
+    #[error("{0}")]
+    StartUpAlertError(#[from] AlertError),
 
     #[error("{0}")]
     StartUpConfigError(#[from] ConfigError),
@@ -41,29 +48,35 @@ pub enum AppError {
 
 type AppResult<T> = Result<T, AppError>;
 
-pub async fn init() -> AppResult<Server> {
-    let c = Config::new(None)?;
-    println!("{:#?}", c);
-
-    let r = Recorder::new(c.shared_dir()?)?;
-    let e = EventHandler::new()?;
-    let s = SignalHandler::new()?;
-
+pub async fn start() -> AppResult<()> {
+    let config = Config::new(None)?;
     let pid = Arc::new((Mutex::new(None), Condvar::new()));
-    let shutdown = Arc::new((AtomicBool::new(false), Mutex::new(()), Condvar::new()));
+    let shut = Arc::new(AtomicBool::new(false));
+    let cond = Arc::new((Mutex::new(()), Condvar::new()));
+    let (tx, rx) = channel(1);
 
-    Ok(Server::new(vec![
-        Client::EventClient(Arc::clone(&pid), Arc::clone(&shutdown), e),
-        Client::RecorderClient(pid, Arc::clone(&shutdown), r),
-        Client::SignalClient(shutdown, s),
-    ]))
-}
+    let event = EventHandler::new(Arc::clone(&pid), Arc::clone(&shut), Arc::clone(&cond))?;
+    let signal = SignalHandler::new(Arc::clone(&shut), Arc::clone(&cond))?;
 
-pub async fn start(server: Server) -> Result<(), AppError> {
-    let join_clients = server.start_clients().await;
+    let recorder = Recorder::new(
+        config.shared_dir()?,
+        config.recorder_config(),
+        Arc::clone(&pid),
+        Arc::clone(&shut),
+        tx,
+    )?;
+    let alert = Alerter::new(config.alert_config(), rx)?;
+
+    let join_clients = vec![
+        spawn(event.start()),
+        spawn(signal.start()),
+        spawn(recorder.start()),
+        spawn(alert.start()),
+    ];
+
     let errors = try_join_all(join_clients).await?;
-    for e in errors.into_iter() {
-        e?;
+    for error in errors.into_iter() {
+        error?; // Is is Ok or Err
     }
     println!("App End");
     Ok(())

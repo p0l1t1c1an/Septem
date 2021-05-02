@@ -10,8 +10,8 @@ use serde_derive::Deserialize;
 
 use thiserror::Error;
 
-const DEFAULT_SHARE: &'static str = "/.local/share/Septem/";
-const DEFAULT_CONFIG: &'static str = "/.config/Septem/septem.toml";
+const DEFAULT_SHARE: &str = "/.local/share/Septem/";
+const DEFAULT_CONFIG: &str = "/.config/Septem/septem.toml";
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -19,33 +19,61 @@ pub enum ConfigError {
     EnvError(#[from] env::VarError),
 
     #[error("Failed to find or read config file:\n{0}")]
-    FileIOError(#[from] io::Error),
+    FileIoError(#[from] io::Error),
 
     #[error("Toml-rs failed to parse the config file:\n{0}")]
     TomlError(#[from] toml::de::Error),
 }
 
-/*
- * TODO:
- *
- * Alert System Configurations
- *
- *
- */
+// Todo: Add Enum and alert type for config
+// It can be a pop up message or play audio
+// Rn, I will just make it println! a message
+
+#[derive(Clone, Deserialize, Debug)]
+pub struct AlertConfig {
+    delay: u64,
+    productive_time: u64,
+    unproductive_time: u64,
+    message: String,
+}
+
+impl Default for AlertConfig {
+    fn default() -> Self {
+        Self {
+            delay: 5,              // 5 seconds deley
+            productive_time: 5,    // Resets at 5 minutes
+            unproductive_time: 20, // Prints message at 5 minutes
+            message: "You have been wasting time.\nPlease start being productive.".to_owned(),
+        }
+    }
+}
+
+impl AlertConfig {
+    pub fn delay(&self) -> u64 {
+        self.delay
+    }
+
+    pub fn productive_time(&self) -> u64 {
+        self.productive_time
+    }
+
+    pub fn unproductive_time(&self) -> u64 {
+        self.unproductive_time
+    }
+
+    pub fn message(&self) -> &String {
+        &self.message
+    }
+}
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RecorderConfig {
     productive: Vec<String>,
-    unproductive: Vec<String>,
 }
 
-impl<'a> RecorderConfig {
-    pub fn productive(&'a self) -> &'a Vec<String> {
+impl RecorderConfig {
+    pub fn productive(&self) -> &Vec<String> {
         &self.productive
-    }
-
-    pub fn unproductive(&'a self) -> &'a Vec<String> {
-        &self.unproductive
     }
 }
 
@@ -84,15 +112,15 @@ impl Date {
 
     // MWD and WD are day of the week
     // MD is day of the month
-    fn day(&self) -> Option<u8> {
+    fn day(&self) -> u8 {
         match *self {
             Self::MonthWeekDay {
                 month: _,
                 week: _,
                 day,
-            } => Some(day),
-            Self::MonthDay { month: _, day } => Some(day),
-            Self::WeekDay { week: _, day } => Some(day),
+            } => day,
+            Self::MonthDay { month: _, day } => day,
+            Self::WeekDay { week: _, day } => day,
         }
     }
 }
@@ -104,8 +132,8 @@ pub struct DateTimeConfig {
     stop_hour: Option<u8>,
 }
 
-impl<'a> DateTimeConfig {
-    pub fn dates(&'a self) -> &'a Vec<Date> {
+impl DateTimeConfig {
+    pub fn dates(&self) -> &Vec<Date> {
         &self.dates
     }
 
@@ -123,6 +151,7 @@ pub struct Config {
     shared_dir: Option<String>,
     blacklist: Option<DateTimeConfig>,
     recorder: RecorderConfig,
+    alert: Option<AlertConfig>,
 }
 
 impl Config {
@@ -153,5 +182,9 @@ impl Config {
 
     pub fn recorder_config(&self) -> RecorderConfig {
         self.recorder.to_owned()
+    }
+
+    pub fn alert_config(&self) -> AlertConfig {
+        self.alert.to_owned().unwrap_or_default()
     }
 }

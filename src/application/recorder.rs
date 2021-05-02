@@ -1,26 +1,26 @@
-#[allow(dead_code)]
-#[allow(unused_variables)]
+use crate::application::client::{Client, ClientResult, Pid, Shutdown};
+use crate::application::config::RecorderConfig;
 use crate::application::process;
+
 use process::{Process, ProcessError};
+
+use tokio::sync::mpsc;
+use tokio::sync::watch;
 use tokio::task::{JoinError, JoinHandle};
+use tokio::time::sleep;
 
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use std::time::SystemTime;
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Condvar, Mutex,
-    },
-};
+use std::time::{Duration, SystemTime};
+use std::{collections::HashMap, sync::atomic::Ordering};
 
+use async_trait::async_trait;
 use csv::{ReaderBuilder, WriterBuilder};
 use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
 
-const DATA_FILE: &'static str = "data.csv";
+const DATA_FILE: &str = "data.csv";
 
 #[derive(Error, Debug)]
 pub enum RecorderError {
@@ -39,6 +39,12 @@ pub enum RecorderError {
     #[error("{0}")]
     WriteThreadError(#[from] JoinError),
 
+    #[error("The receiver was dropped while the sender is still up")]
+    SenderError,
+
+    #[error("Somehow the mspc was not stored properly")]
+    MpscExistenceError,
+
     #[error("The {0} mutex failed to lock")]
     PosionedMutexError(String),
 
@@ -54,15 +60,20 @@ pub type RecorderResult<T> = Result<T, RecorderError>;
 struct Data {
     process_name: String,
     time_focused: u64,
+    is_productive: bool,
 }
 
 pub struct Recorder {
+    pid: Pid,
+    shutdown: Shutdown,
+    is_prod: Option<mpsc::Sender<(bool, u64)>>,
+    config: RecorderConfig,
     share_dir: String,
     prev_proc: Option<Process>,
     curr_proc: Option<Process>,
     start_time: SystemTime,
     write_time: SystemTime,
-    proc_times: HashMap<String, u64>,
+    proc_times: HashMap<String, (u64, bool)>,
 }
 
 impl Recorder {
@@ -70,9 +81,13 @@ impl Recorder {
 
     fn add_data(&mut self, data: Data) {
         match self.proc_times.get_mut(&data.process_name) {
-            Some(t) => *t += data.time_focused,
+            Some((t, p)) => {
+                *t += data.time_focused;
+                *p = data.is_productive;
+            }
             None => {
-                self.proc_times.insert(data.process_name, data.time_focused);
+                self.proc_times
+                    .insert(data.process_name, (data.time_focused, data.is_productive));
             }
         }
     }
@@ -81,7 +96,7 @@ impl Recorder {
         if path.is_dir() {
             let data = path.join(DATA_FILE);
             let mut f = File::create(data)?;
-            f.write_all(b"process_name,time_focused")?;
+            f.write_all(b"process_name,time_focused,is_productive")?;
             Ok(())
         } else {
             Err(RecorderError::PathDoesNotExistError(
@@ -90,7 +105,10 @@ impl Recorder {
         }
     }
 
-    fn parse_data(share: &String) -> RecorderResult<HashMap<String, u64>> {
+    fn parse_data(
+        share: &str,
+        productive: &[String],
+    ) -> RecorderResult<HashMap<String, (u64, bool)>> {
         let path = Path::new(share);
         let data = path.join(DATA_FILE);
 
@@ -99,7 +117,8 @@ impl Recorder {
             let mut map = HashMap::new();
             for r in reader.into_deserialize() {
                 let data: Data = r?;
-                map.insert(data.process_name, data.time_focused);
+                let prod = productive.contains(&data.process_name);
+                map.insert(data.process_name, (data.time_focused, prod));
             }
             Ok(map)
         } else {
@@ -108,25 +127,41 @@ impl Recorder {
         }
     }
 
-    pub fn new(share: String) -> RecorderResult<Recorder> {
+    pub fn new(
+        share: String,
+        conf: RecorderConfig,
+        pid: Pid,
+        shutdown: Shutdown,
+        is_prod: mpsc::Sender<(bool, u64)>,
+    ) -> RecorderResult<Recorder> {
+        let map = Recorder::parse_data(&share, conf.productive())?;
+
         Ok(Recorder {
-            share_dir: share.to_owned(),
+            pid,
+            shutdown,
+            is_prod: Some(is_prod),
+            config: conf,
+            share_dir: share,
             prev_proc: None,
             curr_proc: None,
             start_time: SystemTime::now(),
             write_time: SystemTime::now(),
-            proc_times: Recorder::parse_data(&share)?,
+            proc_times: map,
         })
     }
 
     // Async Functions
 
-    async fn write_data(share: String, proc_times: HashMap<String, u64>) -> RecorderResult<()> {
+    async fn write_data(
+        share: String,
+        proc_times: HashMap<String, (u64, bool)>,
+    ) -> RecorderResult<()> {
         let mut writer = WriterBuilder::new().from_path(Path::new(&share).join(DATA_FILE))?;
-        for (name, time) in proc_times.into_iter() {
+        for (name, (time, prod)) in proc_times.into_iter() {
             writer.serialize(Data {
                 process_name: name,
                 time_focused: time,
+                is_productive: prod,
             })?;
         }
         Ok(())
@@ -135,21 +170,17 @@ impl Recorder {
     async fn wait_to_write(
         is_running: Option<JoinHandle<RecorderResult<()>>>,
         share: String,
-        proc_times: HashMap<String, u64>,
+        proc_times: HashMap<String, (u64, bool)>,
     ) -> RecorderResult<()> {
         if let Some(h) = is_running {
             h.await??;
         }
-        println!("Write!");
         Recorder::write_data(share, proc_times).await?;
         Ok(())
     }
 
-    async fn wait_for_event(
-        &mut self,
-        pid: &Mutex<Option<u32>>,
-        cond: &Condvar,
-    ) -> RecorderResult<()> {
+    async fn wait_for_event(&mut self) -> RecorderResult<()> {
+        let (pid, cond) = &*self.pid;
         match pid.lock() {
             Ok(p) => match cond.wait(p) {
                 Ok(p) => {
@@ -159,55 +190,106 @@ impl Recorder {
                         None => None,
                     }
                 }
-                Err(_) => Err(RecorderError::PosionedCondvarError("pid".to_owned()))?,
+                Err(_) => {
+                    return Err(RecorderError::PosionedCondvarError("pid".to_owned()));
+                }
             },
-            Err(_) => Err(RecorderError::PosionedMutexError("pid".to_owned()))?,
+            Err(_) => {
+                return Err(RecorderError::PosionedMutexError("pid".to_owned()));
+            }
         }
         Ok(())
     }
 
-    pub async fn start(
-        mut self,
-        pid_cond: Arc<(Mutex<Option<u32>>, Condvar)>,
-        shutdown: Arc<(AtomicBool, Mutex<()>, Condvar)>,
+    async fn delay_send_alert(
+        shutdown: Shutdown,
+        is_prod: mpsc::Sender<(bool, u64)>,
+        productive: watch::Receiver<bool>,
+        delay: u64,
     ) -> RecorderResult<()> {
-        let mut write_handle = tokio::spawn(Recorder::wait_to_write(
-            None,
-            self.share_dir.to_owned(),
-            self.proc_times.to_owned(),
-        ));
-        self.write_time = SystemTime::now();
-
-        while !shutdown.0.load(Ordering::SeqCst) {
-            let (pid, cond) = &*pid_cond;
-            self.wait_for_event(pid, cond).await?;
-
-            if let Some(p) = self.prev_proc.clone() {
-                self.add_data(Data {
-                    process_name: p.name,
-                    time_focused: self.start_time.elapsed().unwrap().as_secs(),
-                });
-
-                let write_elapsed = self.write_time.elapsed().unwrap().as_secs();
-                self.write_time = SystemTime::now();
-
-                if write_elapsed >= 30 {
-                    write_handle = tokio::spawn(Recorder::wait_to_write(
-                        Some(write_handle),
-                        self.share_dir.to_owned(),
-                        self.proc_times.to_owned(),
-                    ));
+        let mut count = 0;
+        while !shutdown.load(Ordering::SeqCst) {
+            sleep(Duration::from_millis(delay * 100)).await;
+            count += 1;
+            if count >= 10 {
+                let prod = *productive.borrow();
+                //println!("Got: {}", prod);
+                if is_prod.send((prod, delay)).await.is_err() {
+                    return Err(RecorderError::SenderError);
                 }
+                count = 0;
             }
-
-            for (proc, time) in &self.proc_times {
-                println!("{}: {}", proc, time);
-            }
-
-            self.start_time = SystemTime::now();
         }
-
-        write_handle.await??;
         Ok(())
+    }
+}
+
+#[async_trait]
+impl Client for Recorder {
+    async fn start(mut self) -> ClientResult {
+        let (prod_sender, prod_rcvr) = watch::channel(false);
+        if let Some(is_prod) = std::mem::replace(&mut self.is_prod, None) {
+            let alert_handle = tokio::spawn(Recorder::delay_send_alert(
+                self.shutdown.clone(),
+                is_prod,
+                prod_rcvr,
+                5,
+            ));
+
+            let mut write_handle = tokio::spawn(Recorder::wait_to_write(
+                None,
+                self.share_dir.to_owned(),
+                self.proc_times.to_owned(),
+            ));
+            self.write_time = SystemTime::now();
+
+            while !self.shutdown.load(Ordering::SeqCst) {
+                self.wait_for_event().await?;
+
+                if let Some(p) = self.curr_proc.clone() {
+                    let prod = self.config.productive().contains(&p.name);
+                    if prod_sender.send(prod).is_err() {
+                        return Err(RecorderError::SenderError.into());
+                    }
+                } else if prod_sender.send(false).is_err() {
+                    return Err(RecorderError::SenderError.into());
+                }
+
+                if let Some(p) = self.prev_proc.clone() {
+                    let prod = self.config.productive().contains(&p.name);
+
+                    self.add_data(Data {
+                        process_name: p.name,
+                        time_focused: self.start_time.elapsed().unwrap().as_secs(),
+                        is_productive: prod,
+                    });
+
+                    let write_elapsed = self.write_time.elapsed().unwrap().as_secs();
+                    self.write_time = SystemTime::now();
+
+                    if write_elapsed >= 30 {
+                        write_handle = tokio::spawn(Recorder::wait_to_write(
+                            Some(write_handle),
+                            self.share_dir.to_owned(),
+                            self.proc_times.to_owned(),
+                        ));
+                    }
+                }
+
+                for (proc, (time, prod)) in &self.proc_times {
+                    println!("{}, {}, {}", proc, time, prod);
+                }
+
+                self.start_time = SystemTime::now();
+            }
+
+            prod_sender.closed().await;
+            alert_handle.await??;
+
+            write_handle.await??;
+            Ok(())
+        } else {
+            return Err(RecorderError::MpscExistenceError.into());
+        }
     }
 }
