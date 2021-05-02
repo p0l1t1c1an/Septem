@@ -2,6 +2,7 @@
 
 use libc::{c_char, c_int, c_void, free, pid_t};
 
+#[cfg(target_os = "freebsd")]
 extern "C" {
     fn proc_name(name_ptr: *mut *mut c_char, pid: pid_t) -> c_int;
 }
@@ -65,7 +66,7 @@ impl Process {
     pub fn new(p: pid_t) -> Result<Process, ProcessError> {
         Ok(Process {
             pid: p,
-            name: read_to_string("/proc/" + p.to_string() + "/cmdline")?,
+            name: read_to_string(format!("/proc/{}/cmdline", p))?,
         })
     }
 }

@@ -30,14 +30,14 @@ pub struct SignalHandler {
 
 impl SignalHandler {
     pub fn new(shutdown: Shutdown, cond: Condition) -> SignalResult<SignalHandler> {
-        let sig = Signals::new(&[SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
-        let hand = sig.handle();
+        let signals = Signals::new(&[SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
+        let handle = signals.handle();
 
         Ok(SignalHandler {
-            shutdown: shutdown,
-            cond: cond,
-            signals: sig,
-            handle: hand,
+            shutdown,
+            cond,
+            signals,
+            handle,
         })
     }
 }
@@ -55,7 +55,7 @@ impl Client for SignalHandler {
                     self.handle.close();
                     break;
                 }
-                _ => Err(SignalError::UnknownSignalError)?,
+                _ => { return Err(SignalError::UnknownSignalError.into()); }
             }
         }
 

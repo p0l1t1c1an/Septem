@@ -10,8 +10,8 @@ use serde_derive::Deserialize;
 
 use thiserror::Error;
 
-const DEFAULT_SHARE: &'static str = "/.local/share/Septem/";
-const DEFAULT_CONFIG: &'static str = "/.config/Septem/septem.toml";
+const DEFAULT_SHARE: &str = "/.local/share/Septem/";
+const DEFAULT_CONFIG: &str = "/.config/Septem/septem.toml";
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -19,7 +19,7 @@ pub enum ConfigError {
     EnvError(#[from] env::VarError),
 
     #[error("Failed to find or read config file:\n{0}")]
-    FileIOError(#[from] io::Error),
+    FileIoError(#[from] io::Error),
 
     #[error("Toml-rs failed to parse the config file:\n{0}")]
     TomlError(#[from] toml::de::Error),
@@ -112,15 +112,15 @@ impl Date {
 
     // MWD and WD are day of the week
     // MD is day of the month
-    fn day(&self) -> Option<u8> {
+    fn day(&self) -> u8 {
         match *self {
             Self::MonthWeekDay {
                 month: _,
                 week: _,
                 day,
-            } => Some(day),
-            Self::MonthDay { month: _, day } => Some(day),
-            Self::WeekDay { week: _, day } => Some(day),
+            } => day,
+            Self::MonthDay { month: _, day } => day,
+            Self::WeekDay { week: _, day } => day,
         }
     }
 }

@@ -20,7 +20,7 @@ use csv::{ReaderBuilder, WriterBuilder};
 use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
 
-const DATA_FILE: &'static str = "data.csv";
+const DATA_FILE: &str = "data.csv";
 
 #[derive(Error, Debug)]
 pub enum RecorderError {
@@ -106,8 +106,8 @@ impl Recorder {
     }
 
     fn parse_data(
-        share: &String,
-        productive: &Vec<String>,
+        share: &str,
+        productive: &[String],
     ) -> RecorderResult<HashMap<String, (u64, bool)>> {
         let path = Path::new(share);
         let data = path.join(DATA_FILE);
@@ -137,11 +137,11 @@ impl Recorder {
         let map = Recorder::parse_data(&share, conf.productive())?;
 
         Ok(Recorder {
-            pid: pid,
-            shutdown: shutdown,
+            pid,
+            shutdown,
             is_prod: Some(is_prod),
             config: conf,
-            share_dir: share.to_owned(),
+            share_dir: share,
             prev_proc: None,
             curr_proc: None,
             start_time: SystemTime::now(),
@@ -190,9 +190,13 @@ impl Recorder {
                         None => None,
                     }
                 }
-                Err(_) => Err(RecorderError::PosionedCondvarError("pid".to_owned()))?,
+                Err(_) => {
+                    return Err(RecorderError::PosionedCondvarError("pid".to_owned()));
+                }
             },
-            Err(_) => Err(RecorderError::PosionedMutexError("pid".to_owned()))?,
+            Err(_) => {
+                return Err(RecorderError::PosionedMutexError("pid".to_owned()));
+            }
         }
         Ok(())
     }
@@ -205,14 +209,13 @@ impl Recorder {
     ) -> RecorderResult<()> {
         let mut count = 0;
         while !shutdown.load(Ordering::SeqCst) {
-            tokio::time::sleep(Duration::from_millis(delay * 100)).await;
+            sleep(Duration::from_millis(delay * 100)).await;
             count += 1;
             if count >= 10 {
                 let prod = *productive.borrow();
                 //println!("Got: {}", prod);
-                if let Ok(_) = is_prod.send((prod, delay)).await {
-                } else {
-                    Err(RecorderError::SenderError)?;
+                if is_prod.send((prod, delay)).await.is_err() {
+                    return Err(RecorderError::SenderError);
                 }
                 count = 0;
             }
@@ -245,15 +248,11 @@ impl Client for Recorder {
 
                 if let Some(p) = self.curr_proc.clone() {
                     let prod = self.config.productive().contains(&p.name);
-                    if let Ok(_) = prod_sender.send(prod) {
-                    } else {
-                        Err(RecorderError::SenderError)?;
+                    if prod_sender.send(prod).is_err() {
+                        return Err(RecorderError::SenderError.into());
                     }
-                } else {
-                    if let Ok(_) = prod_sender.send(false) {
-                    } else {
-                        Err(RecorderError::SenderError)?;
-                    }
+                } else if prod_sender.send(false).is_err() {
+                    return Err(RecorderError::SenderError.into());
                 }
 
                 if let Some(p) = self.prev_proc.clone() {
@@ -290,7 +289,7 @@ impl Client for Recorder {
             write_handle.await??;
             Ok(())
         } else {
-            Err(RecorderError::MpscExistenceError)?
+            return Err(RecorderError::MpscExistenceError.into());
         }
     }
 }

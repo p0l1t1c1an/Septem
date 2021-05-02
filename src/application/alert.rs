@@ -10,9 +10,8 @@ use thiserror::Error;
 pub enum AlertError {
     #[error("The alert message is empty and would not show anything")]
     EmptyMessageError,
-
-    #[error("The sender was dropped while the receiver was up")]
-    ReceiverError,
+    //#[error("The sender was dropped while the receiver was up")]
+    //ReceiverError,
 }
 
 pub type AlertResult<T> = Result<T, AlertError>;
@@ -33,11 +32,11 @@ impl Alerter {
         }
     }
 
-    pub fn new(conf: AlertConfig, is_prod: Receiver<(bool, u64)>) -> AlertResult<Alerter> {
-        Alerter::sanity_check_conf(&conf)?;
+    pub fn new(config: AlertConfig, is_prod: Receiver<(bool, u64)>) -> AlertResult<Alerter> {
+        Alerter::sanity_check_conf(&config)?;
         Ok(Alerter {
-            is_prod: is_prod,
-            config: conf,
+            is_prod,
+            config,
             productive: 0,
             unproductive: 0,
         })

@@ -49,29 +49,29 @@ pub enum AppError {
 type AppResult<T> = Result<T, AppError>;
 
 pub async fn start() -> AppResult<()> {
-    let c = Config::new(None)?;
+    let config = Config::new(None)?;
     let pid = Arc::new((Mutex::new(None), Condvar::new()));
     let shut = Arc::new(AtomicBool::new(false));
     let cond = Arc::new((Mutex::new(()), Condvar::new()));
     let (tx, rx) = channel(1);
 
-    let e = EventHandler::new(Arc::clone(&pid), Arc::clone(&shut), Arc::clone(&cond))?;
-    let s = SignalHandler::new(Arc::clone(&shut), Arc::clone(&cond))?;
+    let event = EventHandler::new(Arc::clone(&pid), Arc::clone(&shut), Arc::clone(&cond))?;
+    let signal = SignalHandler::new(Arc::clone(&shut), Arc::clone(&cond))?;
 
-    let r = Recorder::new(
-        c.shared_dir()?,
-        c.recorder_config(),
+    let recorder = Recorder::new(
+        config.shared_dir()?,
+        config.recorder_config(),
         Arc::clone(&pid),
         Arc::clone(&shut),
         tx,
     )?;
-    let a = Alerter::new(c.alert_config(), rx)?;
+    let alert = Alerter::new(config.alert_config(), rx)?;
 
     let join_clients = vec![
-        spawn(e.start()),
-        spawn(s.start()),
-        spawn(r.start()),
-        spawn(a.start()),
+        spawn(event.start()),
+        spawn(signal.start()),
+        spawn(recorder.start()),
+        spawn(alert.start()),
     ];
 
     let errors = try_join_all(join_clients).await?;

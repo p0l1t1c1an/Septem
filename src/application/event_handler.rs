@@ -72,7 +72,7 @@ impl EventHandler {
         let cookie = xcb::change_window_attributes_checked(&conn, screen.root(), &list);
         cookie.request_check()?;
 
-        let ewmh = xcb_util::ewmh::Connection::connect(conn).or_else(|(e, _)| Err(e))?;
+        let ewmh = xcb_util::ewmh::Connection::connect(conn).map_err(|(e, _)| e)?;
 
         Ok((ewmh, screen_id))
     }
@@ -85,9 +85,9 @@ impl EventHandler {
         let vn = ewmh.WM_VISIBLE_NAME();
 
         Ok(EventHandler {
-            pid: pid,
-            shutdown: shutdown,
-            cond: cond,
+            pid,
+            shutdown,
+            cond,
             conn: ewmh,
             screen_id: screen,
             active_win: aw,
@@ -100,38 +100,37 @@ impl EventHandler {
         while !shutdown.load(Ordering::SeqCst) {
             match self.conn.wait_for_event() {
                 None => {
-                    Err(EventError::WaitReturnsNoneError)?;
+                    return Err(EventError::WaitReturnsNoneError);
                 }
                 Some(event) => {
                     let e = event.response_type() & !0x80;
                     let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
                     let a = prop.atom();
 
-                    if e == xcb::PROPERTY_NOTIFY {
-                        if a == self.active_win || a == self.wm_name || a == self.vis_name {
-                            let active =
-                                xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
-                                    .get_reply()?;
-                            {
-                                let (mutex, cond) = &*pid;
+                    if e == xcb::PROPERTY_NOTIFY
+                        && (a == self.active_win || a == self.wm_name || a == self.vis_name)
+                    {
+                        let active = xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
+                            .get_reply()?;
+                        {
+                            let (mutex, cond) = &*pid;
 
-                                match mutex.lock() {
-                                    Ok(mut p) => {
-                                        *p = match active {
-                                            xcb::NONE => None,
-                                            _ => Some(
-                                                xcb_util::ewmh::get_wm_pid(&self.conn, active)
-                                                    .get_reply()?,
-                                            ),
-                                        }
-                                    }
-                                    Err(_) => {
-                                        Err(EventError::PosionedMutexError("pid".to_owned()))?
+                            match mutex.lock() {
+                                Ok(mut p) => {
+                                    *p = match active {
+                                        xcb::NONE => None,
+                                        _ => Some(
+                                            xcb_util::ewmh::get_wm_pid(&self.conn, active)
+                                                .get_reply()?,
+                                        ),
                                     }
                                 }
-
-                                cond.notify_one();
+                                Err(_) => {
+                                    return Err(EventError::PosionedMutexError("pid".to_owned()));
+                                }
                             }
+
+                            cond.notify_one();
                         }
                     }
                 }
@@ -149,9 +148,13 @@ impl EventHandler {
                     shutdown.store(true, Ordering::SeqCst);
                     println!("Cond End");
                 }
-                Err(_) => Err(EventError::PosionedCondvarError("shutdown".to_owned()))?,
+                Err(_) => {
+                    return Err(EventError::PosionedCondvarError("shutdown".to_owned()));
+                }
             },
-            Err(_) => Err(EventError::PosionedMutexError("shutdown".to_owned()))?,
+            Err(_) => {
+                return Err(EventError::PosionedMutexError("shutdown".to_owned()));
+            }
         }
 
         let (_, c) = &*pid;
