@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 
-use chrono::Weekday;
+use chrono::{Weekday, Month};
 use serde_derive::Deserialize;
 
 use thiserror::Error;
@@ -26,7 +26,7 @@ pub enum ConfigError {
     TomlError(#[from] toml::de::Error),
 }
 
-pub type Hours = (Weekday, u8, u8); 
+pub type Hours = (Weekday, u32, u32); 
 
 // Todo: Add Enum and alert type for config
 // It can be a pop up message or play audio
@@ -87,45 +87,8 @@ impl RecorderConfig {
 #[derive(Clone, Deserialize, Debug)]
 #[serde(untagged)]
 pub enum Date {
-    MonthWeekDay { month: u8, week: u8, day: u8 },
-    MonthDay { month: u8, day: u8 },
-}
-
-impl Date {
-    pub fn month(&self) -> u8 {
-        match *self {
-            Self::MonthWeekDay {
-                month,
-                week: _,
-                day: _,
-            } => month,
-            Self::MonthDay { month, day: _ } => month,
-        }
-    }
-
-    pub fn week(&self) -> Option<u8> {
-        match *self {
-            Self::MonthWeekDay {
-                month: _,
-                week,
-                day: _,
-            } => Some(week),
-            Self::MonthDay { month: _, day: _ } => None,
-        }
-    }
-
-    // MWD are day of the week
-    // MD is day of the month
-    pub fn day(&self) -> u8 {
-        match *self {
-            Self::MonthWeekDay {
-                month: _,
-                week: _,
-                day,
-            } => day,
-            Self::MonthDay { month: _, day } => day,
-        }
-    }
+    MonthWeekDay { month: Month, week: u32, day: Weekday },
+    MonthDay { month: Month, day: u32 },
 }
 
 #[derive(Clone, Deserialize, Debug, Default)]
