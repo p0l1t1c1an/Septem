@@ -58,11 +58,12 @@ pub async fn start() -> AppResult<()> {
     date_checker::sanity_check(&config.date_config())?;
     let pid = Arc::new((Mutex::new(None), Condvar::new()));
     let shut = Arc::new(AtomicBool::new(false));
+    let run = Arc::new(AtomicBool::new(true));
     let cond = Arc::new((Mutex::new(()), Condvar::new()));
     let (tx, rx) = channel(1);
 
     let event = EventHandler::new(Arc::clone(&pid), Arc::clone(&shut), Arc::clone(&cond))?;
-    let signal = SignalHandler::new(Arc::clone(&shut), cond)?;
+    let signal = SignalHandler::new(Arc::clone(&shut), Arc::clone(&run), cond)?;
 
     let recorder = Recorder::new(
         config.share()?,
@@ -82,10 +83,18 @@ pub async fn start() -> AppResult<()> {
         spawn(alert.start()),
     ];
 
+    // TODO: Spawn thread that is sleeping 
+    //      and using date checker to wait and then send a sighup to 
+    //      flip shutdown. Will need to use a sigterm ... to close loop 
+    //      that is a select of the try_join_all below and new thread
+
+
     let errors = try_join_all(join_clients).await?;
     for error in errors.into_iter() {
         error?; // Is is Ok or Err
     }
+    
+
     println!("App End");
     Ok(())
 }

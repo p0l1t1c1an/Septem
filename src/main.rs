@@ -1,4 +1,6 @@
 mod application;
+mod signal_handler;
+
 use application::AppError;
 
 use tokio::runtime::Runtime;

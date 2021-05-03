@@ -32,6 +32,7 @@ pub enum ClientError {
 pub type ClientResult = Result<(), ClientError>;
 pub type Pid = Arc<(Mutex<Option<u32>>, Condvar)>;
 pub type Shutdown = Arc<AtomicBool>;
+pub type Running = Shutdown;
 pub type Condition = Arc<(Mutex<()>, Condvar)>;
 
 #[async_trait]
