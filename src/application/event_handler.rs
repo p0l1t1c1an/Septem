@@ -1,7 +1,5 @@
 use crate::application::client::{Client, ClientResult, Condition, Pid, Shutdown};
 
-use std::sync::atomic::Ordering;
-
 use async_trait::async_trait;
 use futures::future::{select, Either};
 //use tokio::{select, try_join};
@@ -25,12 +23,6 @@ pub enum EventError {
 
     #[error("Wait_for_event returned None")]
     WaitReturnsNoneError,
-
-    #[error("The {0} mutex failed to lock")]
-    PosionedMutexError(String),
-
-    #[error("The {0} condvar failed to load")]
-    PosionedCondvarError(String),
 }
 
 impl From<GenericError> for EventError {
@@ -78,26 +70,34 @@ impl EventHandler {
     }
 
     pub fn new(pid: Pid, shutdown: Shutdown, cond: Condition) -> EventResult<EventHandler> {
-        let (ewmh, screen) = Self::establish_conn()?;
+        let (conn, screen_id) = Self::establish_conn()?;
 
-        let aw = ewmh.ACTIVE_WINDOW();
-        let wm = ewmh.WM_NAME();
-        let vn = ewmh.WM_VISIBLE_NAME();
+        let active_win = conn.ACTIVE_WINDOW();
+        let wm_name = conn.WM_NAME();
+        let vis_name = conn.WM_VISIBLE_NAME();
 
         Ok(EventHandler {
             pid,
             shutdown,
             cond,
-            conn: ewmh,
-            screen_id: screen,
-            active_win: aw,
-            wm_name: wm,
-            vis_name: vn,
+            conn,
+            screen_id,
+            active_win,
+            wm_name,
+            vis_name,
         })
     }
 
-    async fn wait_for_event(self, pid: Pid, shutdown: Shutdown) -> EventResult<()> {
-        while !shutdown.load(Ordering::SeqCst) {
+    async fn wait_for_event(self, pid: Pid, shutdown: Shutdown) -> ClientResult<()> {
+        let get_aw = |conn, id| -> EventResult<u32> { 
+            Ok(xcb_util::ewmh::get_active_window(conn, id).get_reply()?)
+        };
+        
+        let get_pid = |conn, aw| -> EventResult<u32> { 
+            Ok(xcb_util::ewmh::get_wm_pid(conn, aw).get_reply()?)
+        };
+
+        while !shutdown.load() {
             match self.conn.wait_for_event() {
                 None => {
                     return Err(EventError::WaitReturnsNoneError);
@@ -110,27 +110,14 @@ impl EventHandler {
                     if e == xcb::PROPERTY_NOTIFY
                         && (a == self.active_win || a == self.wm_name || a == self.vis_name)
                     {
-                        let active = xcb_util::ewmh::get_active_window(&self.conn, self.screen_id)
-                            .get_reply()?;
+                        let active = get_aw(&self.conn, self.screen_id)?;
                         {
-                            let (mutex, cond) = &*pid;
+                            pid.set_pid( match active {
+                                xcb::NONE => None,
+                                _ => Some(get_aw(&self.conn, active)?),
+                            })?;
 
-                            match mutex.lock() {
-                                Ok(mut p) => {
-                                    *p = match active {
-                                        xcb::NONE => None,
-                                        _ => Some(
-                                            xcb_util::ewmh::get_wm_pid(&self.conn, active)
-                                                .get_reply()?,
-                                        ),
-                                    }
-                                }
-                                Err(_) => {
-                                    return Err(EventError::PosionedMutexError("pid".to_owned()));
-                                }
-                            }
-
-                            cond.notify_one();
+                            pid.notify_one();
                         }
                     }
                 }
@@ -140,32 +127,18 @@ impl EventHandler {
         Ok(())
     }
 
-    async fn wait_for_condition(pid: Pid, shutdown: Shutdown, cond: Condition) -> EventResult<()> {
-        let (m, c) = &*cond;
-        match m.lock() {
-            Ok(guard) => match c.wait(guard) {
-                Ok(_) => {
-                    shutdown.store(true, Ordering::SeqCst);
-                    println!("Cond End");
-                }
-                Err(_) => {
-                    return Err(EventError::PosionedCondvarError("shutdown".to_owned()));
-                }
-            },
-            Err(_) => {
-                return Err(EventError::PosionedMutexError("shutdown".to_owned()));
-            }
-        }
-
-        let (_, c) = &*pid;
-        c.notify_one();
+    async fn wait_for_condition(pid: Pid, shutdown: Shutdown, cond: Condition) -> ClientResult<()> {
+        cond.wait();
+        shutdown.store(true);
+        println!("Cond End");
+        pid.notify_one();
         Ok(())
     }
 }
 
 #[async_trait]
 impl Client for EventHandler {
-    async fn start(self) -> ClientResult {
+    async fn start(self) -> ClientResult<()> {
         {
             let stopped = tokio::spawn(EventHandler::wait_for_condition(
                 self.pid.clone(),

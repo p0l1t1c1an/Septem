@@ -34,6 +34,7 @@ pub type Hours = (Weekday, u32, u32);
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct AlertConfig {
+    delay: u64,
     productive_time: f64,
     unproductive_time: f64,
     message: String,
@@ -42,6 +43,7 @@ pub struct AlertConfig {
 impl Default for AlertConfig {
     fn default() -> Self {
         Self {
+            delay: 500,
             productive_time: 5.0,    // Resets at 5 minutes
             unproductive_time: 20.0, // Prints message at 5 minutes
             message: "You have been wasting time.\nPlease start being productive.".to_owned(),
@@ -50,6 +52,10 @@ impl Default for AlertConfig {
 }
 
 impl AlertConfig {
+    pub fn delay(&self) -> u64 {
+        self.delay
+    }
+
     pub fn productive_time(&self) -> f64 {
         self.productive_time
     }
@@ -65,7 +71,6 @@ impl AlertConfig {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct RecorderConfig {
-    notify_delay: u64,
     write_delay: u64,
     productive: Vec<String>,
 }
@@ -73,10 +78,6 @@ pub struct RecorderConfig {
 impl RecorderConfig {
     pub fn productive(&self) -> &Vec<String> {
         &self.productive
-    }
-
-    pub fn notify_delay(&self) -> u64 {
-        self.notify_delay
     }
 
     pub fn write_delay(&self) -> u64 {
@@ -112,7 +113,7 @@ pub struct Config {
     share_directory: Option<String>,
     recorder: RecorderConfig,
     date_and_time: Option<DateTimeConfig>,
-    alert: Option<AlertConfig>,
+    alerts: Option<AlertConfig>,
 }
 
 impl Config {

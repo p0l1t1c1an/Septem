@@ -8,19 +8,16 @@ mod recorder;
 mod signal_handler;
 
 use alert::{AlertError, Alerter};
-use client::{Client, ClientError};
+use client::{Client, ClientError, Condition, Pid, Productive, Shutdown, Running};
 use config::{Config, ConfigError};
 use date_checker::DateError;
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use signal_handler::{SignalError, SignalHandler};
 
-use futures::future::try_join_all;
+use futures::future::{Either, select, try_join_all};
 use tokio::spawn;
-use tokio::sync::mpsc::channel;
 use tokio::task::JoinError;
-
-use std::sync::{atomic::AtomicBool, Arc, Condvar, Mutex};
 
 use thiserror::Error;
 
@@ -56,40 +53,54 @@ type AppResult<T> = Result<T, AppError>;
 pub async fn start() -> AppResult<()> {
     let config = Config::new(None)?;
     date_checker::sanity_check(&config.date_config())?;
-    let pid = Arc::new((Mutex::new(None), Condvar::new()));
-    let shut = Arc::new(AtomicBool::new(false));
-    let run = Arc::new(AtomicBool::new(true));
-    let cond = Arc::new((Mutex::new(()), Condvar::new()));
-    let (tx, rx) = channel(1);
+    let pid = Pid::new();
+    let shut = Shutdown::new(false);
+    let run = Running::new(true);
+    let cond = Condition::new();
+    let prod = Productive::new(false);
 
-    let event = EventHandler::new(Arc::clone(&pid), Arc::clone(&shut), Arc::clone(&cond))?;
-    let signal = SignalHandler::new(Arc::clone(&shut), Arc::clone(&run), cond)?;
+    let event = EventHandler::new(pid.clone(), shut.clone(), cond.clone())?;
+    let signal = SignalHandler::new(shut.clone(), run.clone(), cond)?;
 
     let recorder = Recorder::new(
         config.share()?,
         config.recorder_config(),
         pid,
-        shut,
-        tx,
+        shut.clone(),
+        prod,
     )?;
-    let alert = Alerter::new(config.alert_config(), rx)?;
+    let alert = Alerter::new(config.alert_config(), shut, prod)?;
     
     drop(config);
 
-    let join_clients = vec![
+    let singal_handle = spawn(signal.start());
+
+    let clients = vec![
         spawn(event.start()),
-        spawn(signal.start()),
         spawn(recorder.start()),
         spawn(alert.start()),
     ];
 
     // TODO: Spawn thread that is sleeping 
-    //      and using date checker to wait and then send a sighup to 
-    //      flip shutdown. Will need to use a sigterm ... to close loop 
-    //      that is a select of the try_join_all below and new thread
+    // and using date checker to wait and then send a sighup to 
+    // flip shutdown. Will need to use a sigterm ... to close loop 
+    // that is a select of the try_join_all below and new thread
 
 
-    let errors = try_join_all(join_clients).await?;
+    let joined = try_join_all(clients);
+    
+    while run.load() {
+        match select(joined, singal_handle).await {
+            Either::Left((left, right)) => {
+                
+            }
+            Either::Right((right, left)) => {
+
+            }
+        }
+    }
+
+
     for error in errors.into_iter() {
         error?; // Is is Ok or Err
     }

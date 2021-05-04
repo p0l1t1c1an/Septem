@@ -5,7 +5,6 @@ use signal_hook::consts::signal::*;
 use signal_hook_tokio::{Handle, Signals};
 
 use std::io;
-use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -46,19 +45,18 @@ impl SignalHandler {
 
 #[async_trait]
 impl Client for SignalHandler {
-    async fn start(self) -> ClientResult {
+    async fn start(self) -> ClientResult<()> {
         let mut signals = self.signals.fuse();
         while let Some(sig) = signals.next().await {
             match sig {
                 SIGTERM | SIGINT | SIGQUIT => {
-                    self.running.store(!self.running.load(Ordering::SeqCst), Ordering::SeqCst);
+                    self.running.store(!self.running.load());
                     self.handle.close();
                     break;
                 }
                 SIGHUP => {
-                    self.shutdown.store(true, Ordering::SeqCst);
-                    let (_, c) = &*self.cond;
-                    c.notify_one();
+                    self.shutdown.store(true);
+                    self.cond.notify_one();
                 }
                 _ => { return Err(SignalError::UnknownSignalError.into()); }
             }

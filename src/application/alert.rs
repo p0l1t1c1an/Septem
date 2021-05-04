@@ -1,7 +1,8 @@
-use crate::application::client::{Client, ClientResult};
+use crate::application::client::{Client, ClientResult, Productive, Shutdown};
 use crate::application::config::AlertConfig;
 
-use tokio::sync::mpsc::Receiver;
+use tokio::time::sleep;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -17,7 +18,8 @@ pub enum AlertError {
 pub type AlertResult<T> = Result<T, AlertError>;
 
 pub struct Alerter {
-    is_prod: Receiver<(bool, u64)>,
+    shutdown: Shutdown,
+    is_prod: Productive,
     config: AlertConfig,
     productive: f64,
     unproductive: f64,
@@ -32,9 +34,10 @@ impl Alerter {
         }
     }
 
-    pub fn new(config: AlertConfig, is_prod: Receiver<(bool, u64)>) -> AlertResult<Alerter> {
+    pub fn new(config: AlertConfig, shutdown: Shutdown, is_prod: Productive) -> AlertResult<Alerter> {
         Alerter::sanity_check_conf(&config)?;
         Ok(Alerter {
+            shutdown,
             is_prod,
             config,
             productive: 0.0,
@@ -45,16 +48,18 @@ impl Alerter {
 
 #[async_trait]
 impl Client for Alerter {
-    async fn start(mut self) -> ClientResult {
-        while let Some((prod, time)) = self.is_prod.recv().await {
+    async fn start(mut self) -> ClientResult<()> {
+        while !shutdown.load() {
+            sleep(Duration::from_millis(self.config.delay())).await;
+            let prod = self.is_prod.load();
             if prod {
-                self.productive += time as f64 / 1000.0;
+                self.productive += self.config.delay() as f64 / 1000.0;
                 if self.productive >= self.config.productive_time() * 60.0 {
                     self.productive = 0.0;
                     self.unproductive = 0.0;
                 }
             } else {
-                self.unproductive += time as f64 / 1000.0;
+                self.unproductive += self.config.delay() as f64 / 1000.0;
                 if self.unproductive >= self.config.unproductive_time() * 60.0 {
                     self.productive = 0.0;
                     self.unproductive = 0.0;
