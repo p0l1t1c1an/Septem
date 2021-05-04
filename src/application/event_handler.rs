@@ -89,18 +89,18 @@ impl EventHandler {
     }
 
     async fn wait_for_event(self, pid: Pid, shutdown: Shutdown) -> ClientResult<()> {
-        let get_aw = |conn, id| -> EventResult<u32> { 
+        let get_aw = |conn, id| -> EventResult<u32> {
             Ok(xcb_util::ewmh::get_active_window(conn, id).get_reply()?)
         };
-        
-        let get_pid = |conn, aw| -> EventResult<u32> { 
+
+        let get_pid = |conn, aw| -> EventResult<u32> {
             Ok(xcb_util::ewmh::get_wm_pid(conn, aw).get_reply()?)
         };
 
         while !shutdown.load() {
             match self.conn.wait_for_event() {
                 None => {
-                    return Err(EventError::WaitReturnsNoneError);
+                    return Err(EventError::WaitReturnsNoneError.into());
                 }
                 Some(event) => {
                     let e = event.response_type() & !0x80;
@@ -112,9 +112,9 @@ impl EventHandler {
                     {
                         let active = get_aw(&self.conn, self.screen_id)?;
                         {
-                            pid.set_pid( match active {
+                            pid.set_pid(match active {
                                 xcb::NONE => None,
-                                _ => Some(get_aw(&self.conn, active)?),
+                                _ => Some(get_aw(&self.conn, active as i32)?),
                             })?;
 
                             pid.notify_one();

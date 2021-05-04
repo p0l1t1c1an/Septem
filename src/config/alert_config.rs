@@ -1,4 +1,3 @@
-
 use serde_derive::Deserialize;
 
 // Todo: Add Enum and alert type for config
@@ -41,4 +40,3 @@ impl AlertConfig {
         &self.message
     }
 }
-

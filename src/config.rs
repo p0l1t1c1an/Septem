@@ -14,9 +14,7 @@ use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 
-use chrono::{Weekday, Month};
 use serde_derive::Deserialize;
-
 use thiserror::Error;
 
 const DEFAULT_SHARE: &str = "/.local/share/Septem/";
@@ -67,12 +65,12 @@ impl Config {
     pub fn recorder_config(&self) -> RecorderConfig {
         self.recorder.to_owned()
     }
-    
+
     pub fn date_config(&self) -> DateTimeConfig {
         self.date_and_time.to_owned().unwrap_or_default()
     }
 
     pub fn alert_config(&self) -> AlertConfig {
-        self.alert.to_owned().unwrap_or_default()
+        self.alerts.to_owned().unwrap_or_default()
     }
 }

@@ -1,18 +1,16 @@
-
 mod process;
 use process::{Process, ProcessError};
 
-use crate::application::client::{Client, ClientResult, Pid, Shutdown, Productive};
+use crate::application::client::{Client, ClientResult, Pid, Productive, Shutdown};
 use crate::config::recorder_config::RecorderConfig;
-
 
 use tokio::task::JoinError;
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::time::SystemTime;
-use std::collections::HashMap;
 
 use async_trait::async_trait;
 use csv::{ReaderBuilder, WriterBuilder};
@@ -73,8 +71,7 @@ impl Recorder {
                 *p = data.is_prod;
             }
             None => {
-                self.proc_times
-                    .insert(data.name, (data.time, data.is_prod));
+                self.proc_times.insert(data.name, (data.time, data.is_prod));
             }
         }
     }
@@ -114,7 +111,13 @@ impl Recorder {
         }
     }
 
-    pub fn new(share: String, conf: RecorderConfig, pid: Pid, shutdown: Shutdown, is_prod: Productive) -> RecorderResult<Recorder> {
+    pub fn new(
+        share: String,
+        conf: RecorderConfig,
+        pid: Pid,
+        shutdown: Shutdown,
+        is_prod: Productive,
+    ) -> RecorderResult<Recorder> {
         let map = Recorder::parse_data(&share, conf.productive())?;
 
         Ok(Recorder {
@@ -139,15 +142,17 @@ impl Recorder {
     ) -> RecorderResult<()> {
         let mut writer = WriterBuilder::new().from_path(Path::new(&share).join(DATA_FILE))?;
         for (name, (time, is_prod)) in proc_times.into_iter() {
-            writer.serialize(Data {name, time, is_prod})?;
+            writer.serialize(Data {
+                name,
+                time,
+                is_prod,
+            })?;
         }
         Ok(())
     }
 
     async fn wait_for_event(&mut self) -> ClientResult<()> {
-        let get_proc = |u| -> RecorderResult<Process> {
-            Ok(Process::new(u as i32)?)
-        };
+        let get_proc = |u| -> RecorderResult<Process> { Ok(Process::new(u as i32)?) };
 
         self.prev_proc = self.curr_proc.clone();
         self.curr_proc = match self.pid.get_pid()? {
@@ -160,18 +165,19 @@ impl Recorder {
 
 #[async_trait]
 impl Client for Recorder {
-    async fn start(mut self) -> ClientResult<()> { 
+    async fn start(mut self) -> ClientResult<()> {
         let mut write_handle = tokio::spawn(Recorder::write_data(
-                self.share_dir.to_owned(),
-                self.proc_times.to_owned(),
-            ));
+            self.share_dir.to_owned(),
+            self.proc_times.to_owned(),
+        ));
         self.write_time = SystemTime::now();
 
         while !self.shutdown.load() {
-            self.wait_for_event().await?; 
-            
+            self.wait_for_event().await?;
+
             if let Some(p) = self.curr_proc.clone() {
-                self.is_prod.store(self.config.productive().contains(&p.name));
+                self.is_prod
+                    .store(self.config.productive().contains(&p.name));
             } else {
                 self.is_prod.store(false);
             }

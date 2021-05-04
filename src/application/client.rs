@@ -5,7 +5,10 @@ use crate::application::{
     signal_handler::SignalError,
 };
 
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Condvar, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Condvar, Mutex,
+};
 use tokio::sync::Notify;
 
 use async_trait::async_trait;
@@ -34,7 +37,6 @@ pub enum ClientError {
 
     #[error("The {0} condvar failed to load")]
     PosionedCondvarError(&'static str),
-
 }
 
 pub type ClientResult<T> = Result<T, ClientError>;
@@ -49,7 +51,7 @@ pub struct Pid {
 impl Pid {
     pub fn new() -> Self {
         Pid {
-            val: Arc::new((Mutex::new(None), Condvar::new()))
+            val: Arc::new((Mutex::new(None), Condvar::new())),
         }
     }
 
@@ -59,11 +61,9 @@ impl Pid {
                 *v = val;
                 Ok(())
             }
-            Err(_) => {
-                Err(ClientError::PosionedMutexError("Pid"))
-            }
+            Err(_) => Err(ClientError::PosionedMutexError("Pid")),
         }
-    } 
+    }
 
     pub fn notify_one(&self) {
         self.val.1.notify_one()
@@ -72,13 +72,11 @@ impl Pid {
     pub fn get_pid(&self) -> ClientResult<Option<u32>> {
         match self.val.0.lock() {
             Ok(guard) => match self.val.1.wait(guard) {
-                Ok(v) => {
-                    Ok(v)
-                }
+                Ok(v) => Ok(*v),
                 Err(_) => {
                     return Err(ClientError::PosionedCondvarError("Pid"));
                 }
-            }
+            },
             Err(_) => {
                 return Err(ClientError::PosionedMutexError("Pid"));
             }
@@ -88,7 +86,7 @@ impl Pid {
 
 #[derive(Clone, Debug)]
 pub struct Shutdown {
-    val: Arc<AtomicBool>
+    val: Arc<AtomicBool>,
 }
 
 // Each type is used for different purpose
@@ -99,10 +97,10 @@ pub type Productive = Shutdown;
 impl Shutdown {
     pub fn new(val: bool) -> Self {
         Self {
-            val: Arc::new(AtomicBool::new(val))
+            val: Arc::new(AtomicBool::new(val)),
         }
     }
-    
+
     pub fn load(&self) -> bool {
         self.val.load(Ordering::SeqCst)
     }
@@ -114,13 +112,13 @@ impl Shutdown {
 
 #[derive(Clone, Debug)]
 pub struct Condition {
-    val: Arc<Notify>
+    val: Arc<Notify>,
 }
 
 impl Condition {
     pub fn new() -> Self {
         Self {
-            val: Arc::new(Notify::new())
+            val: Arc::new(Notify::new()),
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::application::client::{Client, ClientResult, Condition, Shutdown, Running};
+use crate::application::client::{Client, ClientResult, Condition, Running, Shutdown};
 
 use futures::stream::StreamExt;
 use signal_hook::consts::signal::*;
@@ -29,7 +29,11 @@ pub struct SignalHandler {
 }
 
 impl SignalHandler {
-    pub fn new(shutdown: Shutdown, running: Running, cond: Condition) -> SignalResult<SignalHandler> {
+    pub fn new(
+        shutdown: Shutdown,
+        running: Running,
+        cond: Condition,
+    ) -> SignalResult<SignalHandler> {
         let signals = Signals::new(&[SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
         let handle = signals.handle();
 
@@ -58,7 +62,9 @@ impl Client for SignalHandler {
                     self.shutdown.store(true);
                     self.cond.notify_one();
                 }
-                _ => { return Err(SignalError::UnknownSignalError.into()); }
+                _ => {
+                    return Err(SignalError::UnknownSignalError.into());
+                }
             }
         }
 

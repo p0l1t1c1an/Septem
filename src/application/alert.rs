@@ -1,8 +1,8 @@
 use crate::application::client::{Client, ClientResult, Productive, Shutdown};
 use crate::config::alert_config::AlertConfig;
 
-use tokio::time::sleep;
 use std::time::Duration;
+use tokio::time::sleep;
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -34,7 +34,11 @@ impl Alerter {
         }
     }
 
-    pub fn new(config: AlertConfig, shutdown: Shutdown, is_prod: Productive) -> AlertResult<Alerter> {
+    pub fn new(
+        config: AlertConfig,
+        shutdown: Shutdown,
+        is_prod: Productive,
+    ) -> AlertResult<Alerter> {
         Alerter::sanity_check_conf(&config)?;
         Ok(Alerter {
             shutdown,
@@ -49,7 +53,7 @@ impl Alerter {
 #[async_trait]
 impl Client for Alerter {
     async fn start(mut self) -> ClientResult<()> {
-        while !shutdown.load() {
+        while !self.shutdown.load() {
             sleep(Duration::from_millis(self.config.delay())).await;
             let prod = self.is_prod.load();
             if prod {

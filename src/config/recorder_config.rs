@@ -1,4 +1,3 @@
-
 use serde_derive::Deserialize;
 
 #[derive(Clone, Deserialize, Debug)]
@@ -16,4 +15,3 @@ impl RecorderConfig {
         self.write_delay
     }
 }
-

@@ -5,15 +5,15 @@ mod recorder;
 mod signal_handler;
 
 use crate::config::{Config, ConfigError};
-use crate::date_checker::DateError;
+use crate::date_checker::{self, DateError};
 
 use alert::{AlertError, Alerter};
-use client::{Client, ClientError, Condition, Pid, Productive, Shutdown, Running};
+use client::{Client, ClientError, Condition, Pid, Productive, Running, Shutdown};
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use signal_handler::{SignalError, SignalHandler};
 
-use futures::future::{Either, select, try_join_all};
+use futures::future::{select, try_join_all, Either};
 use tokio::spawn;
 use tokio::task::JoinError;
 
@@ -34,7 +34,7 @@ pub enum AppError {
     StartUpConfigError(#[from] ConfigError),
 
     #[error("{0}")]
-    StartUpDateError(#[from] DateError),    
+    StartUpDateError(#[from] DateError),
 
     #[error("{0}")]
     StartUpRecorderError(#[from] RecorderError),
@@ -68,7 +68,7 @@ pub async fn start() -> AppResult<()> {
         prod,
     )?;
     let alert = Alerter::new(config.alert_config(), shut, prod)?;
-    
+
     drop(config);
 
     let singal_handle = spawn(signal.start());
@@ -79,30 +79,23 @@ pub async fn start() -> AppResult<()> {
         spawn(alert.start()),
     ];
 
-    // TODO: Spawn thread that is sleeping 
-    // and using date checker to wait and then send a sighup to 
-    // flip shutdown. Will need to use a sigterm ... to close loop 
+    // TODO: Spawn thread that is sleeping
+    // and using date checker to wait and then send a sighup to
+    // flip shutdown. Will need to use a sigterm ... to close loop
     // that is a select of the try_join_all below and new thread
 
-
     let joined = try_join_all(clients);
-    
+
     while run.load() {
         match select(joined, singal_handle).await {
-            Either::Left((left, right)) => {
-                
-            }
-            Either::Right((right, left)) => {
-
-            }
+            Either::Left((left, right)) => {}
+            Either::Right((right, left)) => {}
         }
     }
-
 
     for error in errors.into_iter() {
         error?; // Is is Ok or Err
     }
-    
 
     println!("App End");
     Ok(())
