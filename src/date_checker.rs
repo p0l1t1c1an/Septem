@@ -1,5 +1,5 @@
 
-use crate::application::config::{DateTimeConfig, Hours, Date::{MonthWeekDay, MonthDay}};
+use crate::config::date_config::{DateTimeConfig, Hours, Date::{MonthWeekDay, MonthDay}};
 
 use std::time::Duration;
 use std::collections::HashSet;
@@ -34,13 +34,15 @@ pub enum StartStopTimes {
 }
 
 
-fn weekdays_hours(weekday: Weekday, config: &DateTimeConfig) -> Hours {
+fn weekdays_hours(weekday: Weekday, config: &DateTimeConfig) -> (u32, u32) {
     for hours in config.start_hours() {
-        if weekday == hours.0 {
-            return *hours;
+        if weekday == hours.weekday() {
+            return (hours.start(), hours.stop());
         }
     }
-    (weekday, 0, 24)
+
+    let default = Hours::default();
+    (default.start(), default.stop())
 }
 
 pub fn sanity_check(config: &DateTimeConfig) -> DateResult<()> {
@@ -68,15 +70,15 @@ pub fn sanity_check(config: &DateTimeConfig) -> DateResult<()> {
     let mut weekday_set = HashSet::new();
 
     for hours in config.start_hours() {
-        if !weekday_set.contains(&hours.0) {
-            weekday_set.insert(hours.0.clone());
+        if !weekday_set.contains(&hours.weekday()) {
+            weekday_set.insert(hours.weekday().clone());
         } else {
-            return Err(DateError::RepeatedWeekdayError(hours.0.clone()));
+            return Err(DateError::RepeatedWeekdayError(hours.weekday().clone()));
         }
         
-        if hours.1 >= hours.2 {
-            return Err(DateError::FlipFlopTimeError(hours.0.clone()));
-        } else if hours.1 > 24 || hours.2 > 24 {
+        if hours.start() >= hours.stop() {
+            return Err(DateError::FlipFlopTimeError(hours.weekday().clone()));
+        } else if hours.start() > 24 || hours.stop() > 24 {
             return Err(DateError::HoursTooHighError);
         }
     }
@@ -115,12 +117,12 @@ pub fn next_time(config: &DateTimeConfig) -> StartStopTimes {
     let run_today = should_run(&now.date(), config); 
 
     if run_today { 
-        if now.hour() < hours.1 {
-            let time = (hours.1 - now.hour())*3600 - now.minute()*60 - now.second();
+        if now.hour() < hours.0 {
+            let time = (hours.0 - now.hour())*3600 - now.minute()*60 - now.second();
             return StartStopTimes::StartOfMonitoring(Duration::from_secs(time as u64));
-        } else if now.hour() >= hours.1 && now.hour() < hours.2 {
-            let time = (hours.2 - now.hour())*3600 - now.minute()*60 - now.second();             
-            if hours.2 == 24 {
+        } else if now.hour() >= hours.0 && now.hour() < hours.1 {
+            let time = (hours.1 - now.hour())*3600 - now.minute()*60 - now.second();             
+            if hours.1 == 24 {
                 return StartStopTimes::EndOfDay(Duration::from_secs(time as u64));
             } else {
                 return StartStopTimes::EndOfMonitoring(Duration::from_secs(time as u64)); 

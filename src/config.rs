@@ -1,6 +1,14 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+pub mod alert_config;
+pub mod date_config;
+pub mod recorder_config;
+
+use alert_config::AlertConfig;
+use date_config::DateTimeConfig;
+use recorder_config::RecorderConfig;
+
 use std::env;
 use std::fs::File;
 use std::io;
@@ -24,88 +32,6 @@ pub enum ConfigError {
 
     #[error("Toml-rs failed to parse the config file:\n{0}")]
     TomlError(#[from] toml::de::Error),
-}
-
-pub type Hours = (Weekday, u32, u32); 
-
-// Todo: Add Enum and alert type for config
-// It can be a pop up message or play audio
-// Rn, I will just make it println! a message
-
-#[derive(Clone, Deserialize, Debug)]
-pub struct AlertConfig {
-    delay: u64,
-    productive_time: f64,
-    unproductive_time: f64,
-    message: String,
-}
-
-impl Default for AlertConfig {
-    fn default() -> Self {
-        Self {
-            delay: 500,
-            productive_time: 5.0,    // Resets at 5 minutes
-            unproductive_time: 20.0, // Prints message at 5 minutes
-            message: "You have been wasting time.\nPlease start being productive.".to_owned(),
-        }
-    }
-}
-
-impl AlertConfig {
-    pub fn delay(&self) -> u64 {
-        self.delay
-    }
-
-    pub fn productive_time(&self) -> f64 {
-        self.productive_time
-    }
-
-    pub fn unproductive_time(&self) -> f64 {
-        self.unproductive_time
-    }
-
-    pub fn message(&self) -> &String {
-        &self.message
-    }
-}
-
-#[derive(Clone, Deserialize, Debug)]
-pub struct RecorderConfig {
-    write_delay: u64,
-    productive: Vec<String>,
-}
-
-impl RecorderConfig {
-    pub fn productive(&self) -> &Vec<String> {
-        &self.productive
-    }
-
-    pub fn write_delay(&self) -> u64 {
-        self.write_delay
-    }
-}
-
-#[derive(Clone, Deserialize, Debug)]
-#[serde(untagged)]
-pub enum Date {
-    MonthWeekDay { month: Month, week: u32, day: Weekday },
-    MonthDay { month: Month, day: u32 },
-}
-
-#[derive(Clone, Deserialize, Debug, Default)]
-pub struct DateTimeConfig {
-    disabled_days: Vec<Date>,
-    start_hours: Vec<Hours>,
-}
-
-impl DateTimeConfig {
-    pub fn dates(&self) -> &Vec<Date> {
-        &self.disabled_days
-    }
-
-    pub fn start_hours(&self) -> &Vec<Hours> {
-        &self.start_hours
-    }
 }
 
 #[derive(Deserialize, Debug)]

@@ -1,8 +1,10 @@
-use crate::application::client::{Client, ClientResult, Pid, Shutdown, Productive};
-use crate::application::config::RecorderConfig;
 
-use crate::application::process;
+mod process;
 use process::{Process, ProcessError};
+
+use crate::application::client::{Client, ClientResult, Pid, Shutdown, Productive};
+use crate::config::recorder_config::RecorderConfig;
+
 
 use tokio::task::JoinError;
 
@@ -167,6 +169,7 @@ impl Client for Recorder {
 
         while !self.shutdown.load() {
             self.wait_for_event().await?; 
+            
             if let Some(p) = self.curr_proc.clone() {
                 self.is_prod.store(self.config.productive().contains(&p.name));
             } else {

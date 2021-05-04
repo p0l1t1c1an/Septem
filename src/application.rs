@@ -1,16 +1,14 @@
 mod alert;
 mod client;
-mod config;
-mod date_checker;
 mod event_handler;
-mod process;
 mod recorder;
 mod signal_handler;
 
+use crate::config::{Config, ConfigError};
+use crate::date_checker::DateError;
+
 use alert::{AlertError, Alerter};
 use client::{Client, ClientError, Condition, Pid, Productive, Shutdown, Running};
-use config::{Config, ConfigError};
-use date_checker::DateError;
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use signal_handler::{SignalError, SignalHandler};

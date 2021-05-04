@@ -1,5 +1,5 @@
 use crate::application::client::{Client, ClientResult, Productive, Shutdown};
-use crate::application::config::AlertConfig;
+use crate::config::alert_config::AlertConfig;
 
 use tokio::time::sleep;
 use std::time::Duration;

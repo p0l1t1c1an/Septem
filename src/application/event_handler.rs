@@ -128,7 +128,7 @@ impl EventHandler {
     }
 
     async fn wait_for_condition(pid: Pid, shutdown: Shutdown, cond: Condition) -> ClientResult<()> {
-        cond.wait();
+        cond.wait().await;
         shutdown.store(true);
         println!("Cond End");
         pid.notify_one();

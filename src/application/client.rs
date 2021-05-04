@@ -41,7 +41,6 @@ pub type ClientResult<T> = Result<T, ClientError>;
 
 // Todo: Possibly reimplement Pid using RwLock and Notify over Mutex and Condvar
 
-
 #[derive(Clone, Debug)]
 pub struct Pid {
     val: Arc<(Mutex<Option<u32>>, Condvar)>,
