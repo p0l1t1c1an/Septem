@@ -1,4 +1,4 @@
-use crate::application::client::{Client, ClientResult, Condition, Running, Shutdown};
+use crate::application::client::{Client, ClientResult, Condition, Running};
 
 use futures::stream::StreamExt;
 use signal_hook::consts::signal::*;
@@ -21,7 +21,6 @@ pub enum SignalError {
 type SignalResult<T> = Result<T, SignalError>;
 
 pub struct SignalHandler {
-    shutdown: Shutdown,
     running: Running,
     cond: Condition,
     signals: Signals,
@@ -29,16 +28,11 @@ pub struct SignalHandler {
 }
 
 impl SignalHandler {
-    pub fn new(
-        shutdown: Shutdown,
-        running: Running,
-        cond: Condition,
-    ) -> SignalResult<SignalHandler> {
+    pub fn new(running: Running, cond: Condition) -> SignalResult<SignalHandler> {
         let signals = Signals::new(&[SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
         let handle = signals.handle();
 
         Ok(SignalHandler {
-            shutdown,
             running,
             cond,
             signals,
@@ -53,14 +47,11 @@ impl Client for SignalHandler {
         let mut signals = self.signals.fuse();
         while let Some(sig) = signals.next().await {
             match sig {
-                SIGTERM | SIGINT | SIGQUIT => {
-                    self.running.store(!self.running.load());
+                SIGHUP | SIGTERM | SIGINT | SIGQUIT => {
+                    self.running.store(true);
+                    self.cond.notify_one();
                     self.handle.close();
                     break;
-                }
-                SIGHUP => {
-                    self.shutdown.store(true);
-                    self.cond.notify_one();
                 }
                 _ => {
                     return Err(SignalError::UnknownSignalError.into());

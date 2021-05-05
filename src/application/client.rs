@@ -85,16 +85,15 @@ impl Pid {
 }
 
 #[derive(Clone, Debug)]
-pub struct Shutdown {
+pub struct Running {
     val: Arc<AtomicBool>,
 }
 
 // Each type is used for different purpose
 // Lets me know what to use the variable for
-pub type Running = Shutdown;
-pub type Productive = Shutdown;
+pub type Productive = Running;
 
-impl Shutdown {
+impl Running {
     pub fn new(val: bool) -> Self {
         Self {
             val: Arc::new(AtomicBool::new(val)),

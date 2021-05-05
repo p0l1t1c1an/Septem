@@ -1,4 +1,4 @@
-use crate::application::client::{Client, ClientResult, Condition, Pid, Shutdown};
+use crate::application::client::{Client, ClientResult, Condition, Pid, Running};
 
 use async_trait::async_trait;
 use futures::future::{select, Either};
@@ -11,7 +11,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum EventError {
-    #[error("Connection to the X11 server failed to start or shutdown")]
+    #[error("Connection to the X11 server failed to start or running")]
     ConnectionError(#[from] ConnError),
 
     #[error("Failed to find screen with id: {0}")]
@@ -36,7 +36,7 @@ type EventResult<T> = Result<T, EventError>;
 
 pub struct EventHandler {
     pid: Pid,
-    shutdown: Shutdown,
+    running: Running,
     cond: Condition,
     conn: ewmh::Connection,
     screen_id: i32,
@@ -69,7 +69,7 @@ impl EventHandler {
         Ok((ewmh, screen_id))
     }
 
-    pub fn new(pid: Pid, shutdown: Shutdown, cond: Condition) -> EventResult<EventHandler> {
+    pub fn new(pid: Pid, running: Running, cond: Condition) -> EventResult<EventHandler> {
         let (conn, screen_id) = Self::establish_conn()?;
 
         let active_win = conn.ACTIVE_WINDOW();
@@ -78,7 +78,7 @@ impl EventHandler {
 
         Ok(EventHandler {
             pid,
-            shutdown,
+            running,
             cond,
             conn,
             screen_id,
@@ -88,7 +88,7 @@ impl EventHandler {
         })
     }
 
-    async fn wait_for_event(self, pid: Pid, shutdown: Shutdown) -> ClientResult<()> {
+    async fn wait_for_event(self, pid: Pid, running: Running) -> ClientResult<()> {
         let get_aw = |conn, id| -> EventResult<u32> {
             Ok(xcb_util::ewmh::get_active_window(conn, id).get_reply()?)
         };
@@ -97,7 +97,7 @@ impl EventHandler {
             Ok(xcb_util::ewmh::get_wm_pid(conn, aw).get_reply()?)
         };
 
-        while !shutdown.load() {
+        while running.load() {
             match self.conn.wait_for_event() {
                 None => {
                     return Err(EventError::WaitReturnsNoneError.into());
@@ -114,7 +114,7 @@ impl EventHandler {
                         {
                             pid.set_pid(match active {
                                 xcb::NONE => None,
-                                _ => Some(get_aw(&self.conn, active as i32)?),
+                                _ => Some(get_pid(&self.conn, active)?),
                             })?;
 
                             pid.notify_one();
@@ -127,9 +127,9 @@ impl EventHandler {
         Ok(())
     }
 
-    async fn wait_for_condition(pid: Pid, shutdown: Shutdown, cond: Condition) -> ClientResult<()> {
+    async fn wait_for_condition(pid: Pid, running: Running, cond: Condition) -> ClientResult<()> {
         cond.wait().await;
-        shutdown.store(true);
+        running.store(true);
         println!("Cond End");
         pid.notify_one();
         Ok(())
@@ -142,11 +142,11 @@ impl Client for EventHandler {
         {
             let stopped = tokio::spawn(EventHandler::wait_for_condition(
                 self.pid.clone(),
-                self.shutdown.clone(),
+                self.running.clone(),
                 self.cond.clone(),
             ));
 
-            let (p, s) = (self.pid.clone(), self.shutdown.clone());
+            let (p, s) = (self.pid.clone(), self.running.clone());
             let event = tokio::spawn(self.wait_for_event(p, s));
 
             match select(event, stopped).await {

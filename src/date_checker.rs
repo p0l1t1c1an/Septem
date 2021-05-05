@@ -5,9 +5,12 @@ use crate::config::date_config::{
 
 use std::collections::HashSet;
 use std::time::Duration;
+use tokio::time::{sleep_until, Instant};
 
 use chrono::{Date, Datelike, Local, NaiveDate, Timelike, Weekday};
 use thiserror::Error;
+
+use StartStopTimes::{EndOfDay, EndOfMonitoring, StartOfMonitoring};
 
 #[derive(Error, Debug)]
 pub enum DateError {
@@ -30,7 +33,7 @@ pub enum DateError {
 type DateResult<T> = Result<T, DateError>;
 
 pub enum StartStopTimes {
-    EndOfDay(Duration),
+    EndOfDay(Duration, bool),
     StartOfMonitoring(Duration),
     EndOfMonitoring(Duration),
 }
@@ -110,21 +113,21 @@ fn should_run(date: &Date<Local>, config: &DateTimeConfig) -> bool {
     true
 }
 
-pub fn next_time(config: &DateTimeConfig) -> StartStopTimes {
+fn next_time(config: &DateTimeConfig) -> StartStopTimes {
     let now = Local::now();
     let weekday = now.weekday();
-    let hours = weekdays_hours(weekday, config);
+    let (start, stop) = weekdays_hours(weekday, config);
 
     let run_today = should_run(&now.date(), config);
 
     if run_today {
-        if now.hour() < hours.0 {
-            let time = (hours.0 - now.hour()) * 3600 - now.minute() * 60 - now.second();
+        if now.hour() < start {
+            let time = (start - now.hour()) * 3600 - now.minute() * 60 - now.second();
             return StartStopTimes::StartOfMonitoring(Duration::from_secs(time as u64));
-        } else if now.hour() >= hours.0 && now.hour() < hours.1 {
-            let time = (hours.1 - now.hour()) * 3600 - now.minute() * 60 - now.second();
-            if hours.1 == 24 {
-                return StartStopTimes::EndOfDay(Duration::from_secs(time as u64));
+        } else if now.hour() >= start && now.hour() < stop {
+            let time = (stop - now.hour()) * 3600 - now.minute() * 60 - now.second();
+            if stop == 24 {
+                return StartStopTimes::EndOfDay(Duration::from_secs(time as u64), true);
             } else {
                 return StartStopTimes::EndOfMonitoring(Duration::from_secs(time as u64));
             }
@@ -132,5 +135,27 @@ pub fn next_time(config: &DateTimeConfig) -> StartStopTimes {
     }
 
     let time = (24 - now.hour()) * 3600 - now.minute() * 60 - now.second();
-    StartStopTimes::EndOfDay(Duration::from_secs(time as u64))
+    StartStopTimes::EndOfDay(Duration::from_secs(time as u64), false)
+}
+
+pub async fn wait_next(config: DateTimeConfig) -> bool {
+    let next = next_time(&config);
+    match next {
+        EndOfDay(d, _) => {
+            sleep_until(Instant::now() + d).await;
+            match next_time(&config) {
+                EndOfDay(_, is_on) => is_on,
+                EndOfMonitoring(_) => true,
+                StartOfMonitoring(_) => false,
+            }
+        }
+        EndOfMonitoring(d) => {
+            sleep_until(Instant::now() + d).await;
+            false
+        }
+        StartOfMonitoring(d) => {
+            sleep_until(Instant::now() + d).await;
+            true
+        }
+    }
 }

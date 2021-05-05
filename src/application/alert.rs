@@ -1,4 +1,4 @@
-use crate::application::client::{Client, ClientResult, Productive, Shutdown};
+use crate::application::client::{Client, ClientResult, Productive, Running};
 use crate::config::alert_config::AlertConfig;
 
 use std::time::Duration;
@@ -18,7 +18,7 @@ pub enum AlertError {
 pub type AlertResult<T> = Result<T, AlertError>;
 
 pub struct Alerter {
-    shutdown: Shutdown,
+    running: Running,
     is_prod: Productive,
     config: AlertConfig,
     productive: f64,
@@ -36,12 +36,12 @@ impl Alerter {
 
     pub fn new(
         config: AlertConfig,
-        shutdown: Shutdown,
+        running: Running,
         is_prod: Productive,
     ) -> AlertResult<Alerter> {
         Alerter::sanity_check_conf(&config)?;
         Ok(Alerter {
-            shutdown,
+            running,
             is_prod,
             config,
             productive: 0.0,
@@ -53,7 +53,7 @@ impl Alerter {
 #[async_trait]
 impl Client for Alerter {
     async fn start(mut self) -> ClientResult<()> {
-        while !self.shutdown.load() {
+        while self.running.load() {
             sleep(Duration::from_millis(self.config.delay())).await;
             let prod = self.is_prod.load();
             if prod {

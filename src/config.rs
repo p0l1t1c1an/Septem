@@ -40,6 +40,8 @@ pub struct Config {
     alerts: Option<AlertConfig>,
 }
 
+type BrokenUp = (String, RecorderConfig, DateTimeConfig, AlertConfig);
+
 impl Config {
     // Temp default solution
     pub fn new(c: Option<String>) -> Result<Config, ConfigError> {
@@ -72,5 +74,14 @@ impl Config {
 
     pub fn alert_config(&self) -> AlertConfig {
         self.alerts.to_owned().unwrap_or_default()
+    }
+
+    pub fn break_up(self) -> Result<BrokenUp, ConfigError> {
+        Ok((
+            self.share()?,
+            self.recorder_config(),
+            self.date_config(),
+            self.alert_config(),
+        ))
     }
 }

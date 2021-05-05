@@ -4,18 +4,18 @@ mod event_handler;
 mod recorder;
 mod signal_handler;
 
-use crate::config::{Config, ConfigError};
+use crate::config::{Config, ConfigError, date_config::DateTimeConfig};
 use crate::date_checker::{self, DateError};
 
 use alert::{AlertError, Alerter};
-use client::{Client, ClientError, Condition, Pid, Productive, Running, Shutdown};
+use client::{Client, ClientError, Condition, Pid, Productive, Running};
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use signal_handler::{SignalError, SignalHandler};
 
-use futures::future::{select, try_join_all, Either};
+use futures::future::{try_join_all, select, Either};
 use tokio::spawn;
-use tokio::task::JoinError;
+use tokio::task::{JoinError, JoinHandle};
 
 use thiserror::Error;
 
@@ -48,53 +48,71 @@ pub enum AppError {
 
 type AppResult<T> = Result<T, AppError>;
 
-pub async fn start() -> AppResult<()> {
-    let config = Config::new(None)?;
-    date_checker::sanity_check(&config.date_config())?;
+type ClientThread = JoinHandle<Result<(), ClientError>>;
+
+async fn restart(running: &Running) -> AppResult<(DateTimeConfig, Vec<ClientThread>)> {
+    let (share, rec_conf, date_conf, alert_conf) = Config::new(None)?.break_up()?;
+    date_checker::sanity_check(&date_conf)?;
+
     let pid = Pid::new();
-    let shut = Shutdown::new(false);
-    let run = Running::new(true);
     let cond = Condition::new();
     let prod = Productive::new(false);
 
-    let event = EventHandler::new(pid.clone(), shut.clone(), cond.clone())?;
-    let signal = SignalHandler::new(shut.clone(), run.clone(), cond)?;
+    let event = EventHandler::new(pid.clone(), running.clone(), cond.clone())?;
+    let signal = SignalHandler::new(running.clone(), cond)?;
 
-    let recorder = Recorder::new(
-        config.share()?,
-        config.recorder_config(),
-        pid,
-        shut.clone(),
-        prod,
-    )?;
-    let alert = Alerter::new(config.alert_config(), shut, prod)?;
-
-    drop(config);
-
-    let singal_handle = spawn(signal.start());
+    let recorder = Recorder::new(share, rec_conf, pid, running.clone(), prod.clone())?;
+    let alert = Alerter::new(alert_conf, running.clone(), prod)?;
 
     let clients = vec![
         spawn(event.start()),
+        spawn(signal.start()),
         spawn(recorder.start()),
         spawn(alert.start()),
     ];
+    
+    Ok((date_conf, clients))
+}
 
-    // TODO: Spawn thread that is sleeping
-    // and using date checker to wait and then send a sighup to
-    // flip shutdown. Will need to use a sigterm ... to close loop
-    // that is a select of the try_join_all below and new thread
+pub async fn start() -> AppResult<()> {
+    let running = Running::new(false);
+    let (mut date_conf, mut clients) = restart(&running).await?;
 
-    let joined = try_join_all(clients);
+    let mut joined = spawn(try_join_all(clients));
+    let mut next = spawn(date_checker::wait_next(date_conf.clone()));
 
-    while run.load() {
-        match select(joined, singal_handle).await {
-            Either::Left((left, right)) => {}
-            Either::Right((right, left)) => {}
+    loop {
+        match select(joined, next).await {
+            Either::Left((j, _)) => { 
+                for error in j??.into_iter() {
+                    error?;
+                }
+                break;
+            }
+            Either::Right((n, j)) => {
+                if running.load() { break; }
+
+                if n? {
+                    joined = j;
+                    next = spawn(date_checker::wait_next(date_conf.clone()));
+                } else { 
+
+                    // TODO: Stop Clients
+                    
+                    for error in j.await??.into_iter() {
+                        error?;
+                    }
+                    while !date_checker::wait_next(date_conf.clone()).await { }
+                    
+                    let reset = restart(&running).await?;
+                    date_conf = reset.0;
+                    clients = reset.1;
+                    
+                    joined = spawn(try_join_all(clients));
+                    next = spawn(date_checker::wait_next(date_conf.clone())); 
+                }
+            }
         }
-    }
-
-    for error in errors.into_iter() {
-        error?; // Is is Ok or Err
     }
 
     println!("App End");

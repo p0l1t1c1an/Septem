@@ -1,7 +1,7 @@
 mod process;
 use process::{Process, ProcessError};
 
-use crate::application::client::{Client, ClientResult, Pid, Productive, Shutdown};
+use crate::application::client::{Client, ClientResult, Pid, Productive, Running};
 use crate::config::recorder_config::RecorderConfig;
 
 use tokio::task::JoinError;
@@ -50,7 +50,7 @@ struct Data {
 
 pub struct Recorder {
     pid: Pid,
-    shutdown: Shutdown,
+    running: Running,
     is_prod: Productive,
     config: RecorderConfig,
     share_dir: String,
@@ -115,14 +115,14 @@ impl Recorder {
         share: String,
         conf: RecorderConfig,
         pid: Pid,
-        shutdown: Shutdown,
+        running: Running,
         is_prod: Productive,
     ) -> RecorderResult<Recorder> {
         let map = Recorder::parse_data(&share, conf.productive())?;
 
         Ok(Recorder {
             pid,
-            shutdown,
+            running,
             is_prod,
             config: conf,
             share_dir: share,
@@ -172,7 +172,7 @@ impl Client for Recorder {
         ));
         self.write_time = SystemTime::now();
 
-        while !self.shutdown.load() {
+        while self.running.load() {
             self.wait_for_event().await?;
 
             if let Some(p) = self.curr_proc.clone() {
@@ -184,9 +184,9 @@ impl Client for Recorder {
 
             if let Some(p) = self.prev_proc.clone() {
                 self.add_data(Data {
+                    is_prod: self.config.productive().contains(&p.name),
                     name: p.name,
                     time: self.start_time.elapsed().unwrap().as_secs(),
-                    is_prod: self.config.productive().contains(&p.name),
                 });
 
                 let write_elapsed = self.write_time.elapsed().unwrap().as_secs();
