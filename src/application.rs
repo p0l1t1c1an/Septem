@@ -50,16 +50,15 @@ type AppResult<T> = Result<T, AppError>;
 
 type ClientThread = JoinHandle<Result<(), ClientError>>;
 
-async fn restart(running: &Running) -> AppResult<(DateTimeConfig, Vec<ClientThread>)> {
+async fn restart(running: &Running, cond: &Condition) -> AppResult<(DateTimeConfig, Vec<ClientThread>)> {
     let (share, rec_conf, date_conf, alert_conf) = Config::new(None)?.break_up()?;
     date_checker::sanity_check(&date_conf)?;
 
     let pid = Pid::new();
-    let cond = Condition::new();
     let prod = Productive::new(false);
 
     let event = EventHandler::new(pid.clone(), running.clone(), cond.clone())?;
-    let signal = SignalHandler::new(running.clone(), cond)?;
+    let signal = SignalHandler::new(running.clone(), cond.clone())?;
 
     let recorder = Recorder::new(share, rec_conf, pid, running.clone(), prod.clone())?;
     let alert = Alerter::new(alert_conf, running.clone(), prod)?;
@@ -75,8 +74,17 @@ async fn restart(running: &Running) -> AppResult<(DateTimeConfig, Vec<ClientThre
 }
 
 pub async fn start() -> AppResult<()> {
-    let running = Running::new(false);
-    let (mut date_conf, mut clients) = restart(&running).await?;
+    let running = Running::new(true);
+    let cond = Condition::new();
+    
+    let (mut date_conf, mut clients) = restart(&running, &cond).await?;
+
+    // TODO: 
+    // If not meant to be running right now, 
+    // then wait until it should start 
+    // else continue below
+    //
+    // May add a current state parameter to wait next?
 
     let mut joined = spawn(try_join_all(clients));
     let mut next = spawn(date_checker::wait_next(date_conf.clone()));
@@ -90,21 +98,24 @@ pub async fn start() -> AppResult<()> {
                 break;
             }
             Either::Right((n, j)) => {
-                if running.load() { break; }
+                if !running.load() { break; }
 
                 if n? {
                     joined = j;
                     next = spawn(date_checker::wait_next(date_conf.clone()));
                 } else { 
-
-                    // TODO: Stop Clients
+                    running.store(false);
+                    cond.notify_one();
                     
                     for error in j.await??.into_iter() {
                         error?;
                     }
+                    
                     while !date_checker::wait_next(date_conf.clone()).await { }
                     
-                    let reset = restart(&running).await?;
+                    running.store(true);
+                    let reset = restart(&running, &cond).await?;
+                    
                     date_conf = reset.0;
                     clients = reset.1;
                     

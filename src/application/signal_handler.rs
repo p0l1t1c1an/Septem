@@ -48,7 +48,7 @@ impl Client for SignalHandler {
         while let Some(sig) = signals.next().await {
             match sig {
                 SIGHUP | SIGTERM | SIGINT | SIGQUIT => {
-                    self.running.store(true);
+                    self.running.store(false);
                     self.cond.notify_one();
                     self.handle.close();
                     break;
