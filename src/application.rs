@@ -80,6 +80,10 @@ pub async fn start() -> AppResult<()> {
     let running = Running::new(true);
     let cond = Condition::new();
 
+    let (_, _, temp_date, _) = Config::new(None)?.break_up()?;
+    date_checker::wait_start(temp_date).await;
+
+
     let (mut date_conf, mut clients) = restart(&running, &cond).await?;
 
     // TODO:
@@ -88,9 +92,7 @@ pub async fn start() -> AppResult<()> {
     // else continue below
     //
     // May add a current state parameter to wait next?
-
-    date_checker::wait_start(date_conf.clone()).await;
-
+    
     let mut joined = spawn(try_join_all(clients));
     let mut next = spawn(date_checker::wait_next(date_conf.clone()));
 

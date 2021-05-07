@@ -129,7 +129,7 @@ impl EventHandler {
 
     async fn wait_for_condition(pid: Pid, running: Running, cond: Condition) -> ClientResult<()> {
         cond.wait().await;
-        running.store(true);
+        running.store(false);
         println!("Cond End");
         pid.notify_one();
         Ok(())

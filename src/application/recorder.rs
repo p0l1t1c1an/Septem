@@ -80,7 +80,7 @@ impl Recorder {
         if path.is_dir() {
             let data = path.join(DATA_FILE);
             let mut f = File::create(data)?;
-            f.write_all(b"process_name,time_focused,is_productive")?;
+            f.write_all(b"name,time,is_prod")?;
             Ok(())
         } else {
             Err(RecorderError::PathDoesNotExistError(
@@ -209,6 +209,7 @@ impl Client for Recorder {
         }
 
         write_handle.await??;
+        println!("Rec End");
         Ok(())
     }
 }
