@@ -77,11 +77,11 @@ pub fn sanity_check(config: &DateTimeConfig) -> DateResult<()> {
         if !weekday_set.contains(&hours.weekday()) {
             weekday_set.insert(hours.weekday().clone());
         } else {
-            return Err(DateError::RepeatedWeekdayError(hours.weekday().clone()));
+            return Err(DateError::RepeatedWeekdayError(hours.weekday()));
         }
 
         if hours.start() >= hours.stop() {
-            return Err(DateError::FlipFlopTimeError(hours.weekday().clone()));
+            return Err(DateError::FlipFlopTimeError(hours.weekday()));
         } else if hours.start() > 24 || hours.stop() > 24 {
             return Err(DateError::HoursTooHighError);
         }
@@ -157,5 +157,27 @@ pub async fn wait_next(config: DateTimeConfig) -> bool {
             sleep_until(Instant::now() + d).await;
             true
         }
+    }
+}
+
+pub async fn wait_start(config: DateTimeConfig) {
+    let mut next = next_time(&config);
+    loop {
+        match next {
+            EndOfDay(d, is_on) => {
+                if !is_on {
+                    sleep_until(Instant::now() + d).await;
+                } else {
+                    break;
+                }
+            }
+            EndOfMonitoring(_) => {
+                break;
+            }
+            StartOfMonitoring(d) => {
+                sleep_until(Instant::now() + d).await;
+            }
+        }
+        next = next_time(&config);
     }
 }

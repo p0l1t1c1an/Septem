@@ -34,11 +34,7 @@ impl Alerter {
         }
     }
 
-    pub fn new(
-        config: AlertConfig,
-        running: Running,
-        is_prod: Productive,
-    ) -> AlertResult<Alerter> {
+    pub fn new(config: AlertConfig, running: Running, is_prod: Productive) -> AlertResult<Alerter> {
         Alerter::sanity_check_conf(&config)?;
         Ok(Alerter {
             running,
