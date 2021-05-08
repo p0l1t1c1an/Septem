@@ -86,13 +86,6 @@ pub async fn start() -> AppResult<()> {
 
     let (mut date_conf, mut clients) = restart(&running, &cond).await?;
 
-    // TODO:
-    // If not meant to be running right now,
-    // then wait until it should start
-    // else continue below
-    //
-    // May add a current state parameter to wait next?
-    
     let mut joined = spawn(try_join_all(clients));
     let mut next = spawn(date_checker::wait_next(date_conf.clone()));
 

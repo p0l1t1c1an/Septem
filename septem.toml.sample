@@ -1,0 +1,6 @@
+
+[recorder]
+notify_delay = 5000
+write_delay = 20
+productive = []
+
