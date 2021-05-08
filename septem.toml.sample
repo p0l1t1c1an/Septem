@@ -1,6 +1,19 @@
 
 [recorder]
-notify_delay = 5000
 write_delay = 20
 productive = []
+
+
+[date_and_time]
+
+# Christmas and Thanksgiving Turned off
+disabled_days = [
+    {month = "Dec", day = 25},
+    {month = "Nov", week = 4, day = "Thu"},
+]
+
+# 9am - 5pm hours
+start_hours = [
+    {weekday = "Sat", start = 9, stop = 17},
+]
 

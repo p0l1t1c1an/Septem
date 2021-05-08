@@ -32,6 +32,7 @@ pub enum DateError {
 
 type DateResult<T> = Result<T, DateError>;
 
+#[derive(Debug)]
 pub enum StartStopTimes {
     EndOfDay(Duration, bool),
     StartOfMonitoring(Duration),
@@ -162,6 +163,7 @@ pub async fn wait_next(config: DateTimeConfig) -> bool {
 
 pub async fn wait_start(config: DateTimeConfig) {
     let mut next = next_time(&config);
+    println!("{:?}", next);
     loop {
         match next {
             EndOfDay(d, is_on) => {
