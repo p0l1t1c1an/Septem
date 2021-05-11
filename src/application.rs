@@ -17,6 +17,8 @@ use futures::future::{select, try_join_all, Either};
 use tokio::spawn;
 use tokio::task::{JoinError, JoinHandle};
 
+use signal_hook_tokio::Handle;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -50,10 +52,21 @@ type AppResult<T> = Result<T, AppError>;
 
 type ClientThread = JoinHandle<Result<(), ClientError>>;
 
+
+/*
+ *  TODO
+ *
+ *  Create a total server type that stores all clients,
+ *  all way to stop and start all spawned threads. 
+ *  Plus new function to create that takes config file string
+ *
+ */
+
+
 async fn restart(
     running: &Running,
     cond: &Condition,
-) -> AppResult<(DateTimeConfig, Vec<ClientThread>)> {
+) -> AppResult<(DateTimeConfig, Handle, Vec<ClientThread>)> {
     let (share, rec_conf, date_conf, alert_conf) = Config::new(None)?.break_up()?;
     date_checker::sanity_check(&date_conf)?;
 
@@ -62,6 +75,7 @@ async fn restart(
 
     let event = EventHandler::new(pid.clone(), running.clone(), cond.clone())?;
     let signal = SignalHandler::new(running.clone(), cond.clone())?;
+    let handle = signal.handle();
 
     let recorder = Recorder::new(share, rec_conf, pid, running.clone(), prod.clone())?;
     let alert = Alerter::new(alert_conf, running.clone(), prod)?;
@@ -73,7 +87,7 @@ async fn restart(
         spawn(alert.start()),
     ];
 
-    Ok((date_conf, clients))
+    Ok((date_conf, handle, clients))
 }
 
 pub async fn start() -> AppResult<()> {
@@ -84,7 +98,7 @@ pub async fn start() -> AppResult<()> {
     date_checker::wait_start(temp_date).await;
 
 
-    let (mut date_conf, mut clients) = restart(&running, &cond).await?;
+    let (mut date_conf, mut handle, mut clients) = restart(&running, &cond).await?;
 
     let mut joined = spawn(try_join_all(clients));
     let mut next = spawn(date_checker::wait_next(date_conf.clone()));
@@ -107,6 +121,7 @@ pub async fn start() -> AppResult<()> {
                     next = spawn(date_checker::wait_next(date_conf.clone()));
                 } else {
                     running.store(false);
+                    handle.close();
                     cond.notify_one();
 
                     for error in j.await??.into_iter() {
@@ -119,7 +134,8 @@ pub async fn start() -> AppResult<()> {
                     let reset = restart(&running, &cond).await?;
 
                     date_conf = reset.0;
-                    clients = reset.1;
+                    handle = reset.1;
+                    clients = reset.2;
 
                     joined = spawn(try_join_all(clients));
                     next = spawn(date_checker::wait_next(date_conf.clone()));

@@ -39,6 +39,11 @@ impl SignalHandler {
             handle,
         })
     }
+    
+    pub fn handle(&self) -> Handle {
+        self.handle.clone()
+    }
+
 }
 
 #[async_trait]
@@ -58,7 +63,7 @@ impl Client for SignalHandler {
                 }
             }
         }
-
+        println!("Signal End");
         Ok(())
     }
 }
