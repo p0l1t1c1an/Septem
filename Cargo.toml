@@ -12,7 +12,7 @@ libc = "0.2"
 
 chrono = { version = "0.4", features = ["serde"] }
 
-xcb = "0.9"
+xcb = { version = "0.9", features = ["thread"] }
 xcb-util = { version = "0.3", features = ["ewmh"] }
 
 futures = "0.3"

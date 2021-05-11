@@ -3,6 +3,8 @@ use crate::config::date_config::{
     DateTimeConfig, Hours,
 };
 
+use crate::application::client::{Timeout, WaitTimeout};
+
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio::time::{sleep_until, Instant};
@@ -139,24 +141,33 @@ fn next_time(config: &DateTimeConfig) -> StartStopTimes {
     StartStopTimes::EndOfDay(Duration::from_secs(time as u64), false)
 }
 
-pub async fn wait_next(config: DateTimeConfig) -> bool {
+pub async fn wait_next(config: DateTimeConfig, time: Timeout) -> Option<bool> {
     let next = next_time(&config);
     match next {
         EndOfDay(d, _) => {
-            sleep_until(Instant::now() + d).await;
-            match next_time(&config) {
-                EndOfDay(_, is_on) => is_on,
-                EndOfMonitoring(_) => true,
-                StartOfMonitoring(_) => false,
+            if let WaitTimeout::TimedOut = time.wait_timeout(d).await {
+                Some(match next_time(&config) {
+                    EndOfDay(_, is_on) => is_on,
+                    EndOfMonitoring(_) => true,
+                    StartOfMonitoring(_) => false,
+                })
+            } else {
+                None
             }
         }
         EndOfMonitoring(d) => {
-            sleep_until(Instant::now() + d).await;
-            false
+            if let WaitTimeout::TimedOut = time.wait_timeout(d).await {
+                Some(false)
+            } else {
+                None
+            }
         }
         StartOfMonitoring(d) => {
-            sleep_until(Instant::now() + d).await;
-            true
+            if let WaitTimeout::TimedOut = time.wait_timeout(d).await {
+                Some(true) 
+            } else { 
+                None    
+            }
         }
     }
 }

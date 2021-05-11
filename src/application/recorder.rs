@@ -155,7 +155,7 @@ impl Recorder {
         let get_proc = |u| -> RecorderResult<Process> { Ok(Process::new(u as i32)?) };
 
         self.prev_proc = self.curr_proc.clone();
-        self.curr_proc = match self.pid.get_pid()? {
+        self.curr_proc = match self.pid.wait_pid().await {
             Some(u) => Some(get_proc(u)?),
             None => None,
         };

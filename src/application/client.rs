@@ -7,9 +7,13 @@ use crate::application::{
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Condvar, Mutex,
+    Arc,
 };
-use tokio::sync::Notify;
+use tokio::sync::{Notify, RwLock};
+use tokio::time::{sleep_until, Duration, Instant};
+
+use futures::future::{select, Either};
+use futures::pin_mut;
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -31,56 +35,37 @@ pub enum ClientError {
 
     #[error("{0}")]
     SignalClientError(#[from] SignalError),
-
-    #[error("The {0} mutex failed to lock")]
-    PosionedMutexError(&'static str),
-
-    #[error("The {0} condvar failed to load")]
-    PosionedCondvarError(&'static str),
 }
 
 pub type ClientResult<T> = Result<T, ClientError>;
 
-// Todo: Possibly reimplement Pid using RwLock and Notify over Mutex and Condvar
-
 #[derive(Clone, Debug)]
 pub struct Pid {
-    val: Arc<(Mutex<Option<u32>>, Condvar)>,
+    val: Arc<(RwLock<Option<u32>>, Notify)>,
 }
+
+unsafe impl Send for Pid {}
+unsafe impl Sync for Pid {}
 
 impl Pid {
     pub fn new() -> Self {
         Pid {
-            val: Arc::new((Mutex::new(None), Condvar::new())),
+            val: Arc::new((RwLock::new(None), Notify::new())),
         }
     }
 
-    pub fn set_pid(&self, val: Option<u32>) -> ClientResult<()> {
-        match self.val.0.lock() {
-            Ok(mut v) => {
-                *v = val;
-                Ok(())
-            }
-            Err(_) => Err(ClientError::PosionedMutexError("Pid")),
-        }
+    pub async fn set_pid(&self, val: Option<u32>) {
+        let mut v = self.val.0.write().await;
+        *v = val;
     }
 
     pub fn notify_one(&self) {
         self.val.1.notify_one()
     }
 
-    pub fn get_pid(&self) -> ClientResult<Option<u32>> {
-        match self.val.0.lock() {
-            Ok(guard) => match self.val.1.wait(guard) {
-                Ok(v) => Ok(*v),
-                Err(_) => {
-                    return Err(ClientError::PosionedCondvarError("Pid"));
-                }
-            },
-            Err(_) => {
-                return Err(ClientError::PosionedMutexError("Pid"));
-            }
-        }
+    pub async fn wait_pid(&self) -> Option<u32> {
+        self.val.1.notified().await;
+        *self.val.0.read().await
     }
 }
 
@@ -88,6 +73,9 @@ impl Pid {
 pub struct Running {
     val: Arc<AtomicBool>,
 }
+
+unsafe impl Send for Running {}
+unsafe impl Sync for Running {}
 
 // Each type is used for different purpose
 // Lets me know what to use the variable for
@@ -109,10 +97,20 @@ impl Running {
     }
 }
 
+pub enum WaitTimeout {
+    Notified,
+    TimedOut,
+}
+
 #[derive(Clone, Debug)]
 pub struct Condition {
     val: Arc<Notify>,
 }
+
+unsafe impl Send for Condition {}
+unsafe impl Sync for Condition {}
+
+pub type Timeout = Condition;
 
 impl Condition {
     pub fn new() -> Self {
@@ -127,6 +125,22 @@ impl Condition {
 
     pub async fn wait(&self) {
         self.val.notified().await;
+    }
+
+    // Returns true if notify is notified
+    // false if timeout
+    // Could use an enum for which happened
+    pub async fn wait_timeout(&self, time: Duration) -> WaitTimeout {
+        let wait = self.wait();
+        let sleep = sleep_until(Instant::now() + time);
+
+        pin_mut!(wait);
+        pin_mut!(sleep);
+
+        match select(wait, sleep).await { 
+            Either::Left(_) => WaitTimeout::Notified,
+            Either::Right(_) => WaitTimeout::TimedOut,
+        }
     }
 }
 

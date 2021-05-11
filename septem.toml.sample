@@ -22,6 +22,6 @@ start_hours = [
     {weekday = "Thu", start = 9, stop = 17},
     {weekday = "Fri", start = 9, stop = 17},
     {weekday = "Sat", start = 12, stop = 15},
-    {weekday = "Sun", start = 0, stop = 1},
+    {weekday = "Sun", start = 12, stop = 15},
 ]
 

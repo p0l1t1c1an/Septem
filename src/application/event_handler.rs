@@ -88,7 +88,7 @@ impl EventHandler {
         })
     }
 
-    async fn wait_for_event(self, pid: Pid, running: Running) -> ClientResult<()> {
+    async fn wait_for_event(self) -> EventResult<()> {
         let get_aw = |conn, id| -> EventResult<u32> {
             Ok(xcb_util::ewmh::get_active_window(conn, id).get_reply()?)
         };
@@ -97,42 +97,39 @@ impl EventHandler {
             Ok(xcb_util::ewmh::get_wm_pid(conn, aw).get_reply()?)
         };
 
-        while running.load() {
-            match self.conn.wait_for_event() {
-                None => {
-                    return Err(EventError::WaitReturnsNoneError.into());
-                }
-                Some(event) => {
-                    let e = event.response_type() & !0x80;
-                    let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
-                    let a = prop.atom();
+        while self.running.load() {
+            let wait = self.conn.wait_for_event();
+            if let Some(event) = wait {
+                let e = event.response_type() & !0x80;
+                let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
+                let a = prop.atom();
 
-                    if e == xcb::PROPERTY_NOTIFY
-                        && (a == self.active_win || a == self.wm_name || a == self.vis_name)
+                if e == xcb::PROPERTY_NOTIFY
+                    && (a == self.active_win || a == self.wm_name || a == self.vis_name)
+                {
+                    let active = get_aw(&self.conn, self.screen_id)?;
                     {
-                        let active = get_aw(&self.conn, self.screen_id)?;
-                        {
-                            pid.set_pid(match active {
-                                xcb::NONE => None,
-                                _ => Some(get_pid(&self.conn, active)?),
-                            })?;
-
-                            pid.notify_one();
-                        }
+                        self.pid.set_pid(if active == xcb::NONE {
+                                None
+                            } else {
+                                Some(get_pid(&self.conn, active)?)
+                            }).await;
                     }
+                    self.pid.notify_one();
                 }
+            } else {
+                return Err(EventError::WaitReturnsNoneError.into());
             }
         }
         println!("Event End");
         Ok(())
     }
 
-    async fn wait_for_condition(pid: Pid, running: Running, cond: Condition) -> ClientResult<()> {
+    async fn wait_for_condition(pid: Pid, running: Running, cond: Condition) {
         cond.wait().await;
         running.store(false);
         println!("Cond End");
         pid.notify_one();
-        Ok(())
     }
 }
 
@@ -146,12 +143,11 @@ impl Client for EventHandler {
                 self.cond.clone(),
             ));
 
-            let (p, s) = (self.pid.clone(), self.running.clone());
-            let event = tokio::spawn(self.wait_for_event(p, s));
+            let event = tokio::spawn(self.wait_for_event());
 
             match select(event, stopped).await {
                 Either::Left((left, _)) => left??,
-                Either::Right((right, _)) => right??,
+                Either::Right((right, _)) => right?,
             }
         }
 

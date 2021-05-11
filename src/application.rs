@@ -1,14 +1,15 @@
 mod alert;
 mod client;
+mod date_checker;
 mod event_handler;
 mod recorder;
 mod signal_handler;
 
 use crate::config::{date_config::DateTimeConfig, Config, ConfigError};
-use crate::date_checker::{self, DateError};
 
 use alert::{AlertError, Alerter};
-use client::{Client, ClientError, Condition, Pid, Productive, Running};
+use client::{Client, ClientError, Condition, Pid, Productive, Running, Timeout};
+use date_checker::DateError;
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use signal_handler::{SignalError, SignalHandler};
@@ -16,8 +17,6 @@ use signal_handler::{SignalError, SignalHandler};
 use futures::future::{select, try_join_all, Either};
 use tokio::spawn;
 use tokio::task::{JoinError, JoinHandle};
-
-use signal_hook_tokio::Handle;
 
 use thiserror::Error;
 
@@ -52,29 +51,30 @@ type AppResult<T> = Result<T, AppError>;
 
 type ClientThread = JoinHandle<Result<(), ClientError>>;
 
-
 /*
  *  TODO
  *
  *  Create a total server type that stores all clients,
- *  all way to stop and start all spawned threads. 
+ *  all way to stop and start all spawned threads.
  *  Plus new function to create that takes config file string
  *
  */
 
-
-async fn restart(
+fn restart(
     running: &Running,
     cond: &Condition,
-) -> AppResult<(DateTimeConfig, Handle, Vec<ClientThread>)> {
+    time: &Timeout,
+) -> AppResult<(DateTimeConfig, Vec<ClientThread>)> {
     let (share, rec_conf, date_conf, alert_conf) = Config::new(None)?.break_up()?;
     date_checker::sanity_check(&date_conf)?;
+
+    running.store(true);
 
     let pid = Pid::new();
     let prod = Productive::new(false);
 
     let event = EventHandler::new(pid.clone(), running.clone(), cond.clone())?;
-    let signal = SignalHandler::new(running.clone(), cond.clone())?;
+    let signal = SignalHandler::new(running.clone(), cond.clone(), time.clone())?;
     let handle = signal.handle();
 
     let recorder = Recorder::new(share, rec_conf, pid, running.clone(), prod.clone())?;
@@ -87,23 +87,23 @@ async fn restart(
         spawn(alert.start()),
     ];
 
-    Ok((date_conf, handle, clients))
+    Ok((date_conf, clients))
 }
 
 pub async fn start() -> AppResult<()> {
     let running = Running::new(true);
     let cond = Condition::new();
+    let time = Timeout::new();
 
     let (_, _, temp_date, _) = Config::new(None)?.break_up()?;
     date_checker::wait_start(temp_date).await;
 
-
-    let (mut date_conf, mut handle, mut clients) = restart(&running, &cond).await?;
+    let (mut date_conf, mut clients) = restart(&running, &cond, &time)?;
 
     let mut joined = spawn(try_join_all(clients));
-    let mut next = spawn(date_checker::wait_next(date_conf.clone()));
+    let mut next = spawn(date_checker::wait_next(date_conf.clone(), time.clone()));
 
-    loop {
+    'main: loop {
         match select(joined, next).await {
             Either::Left((j, _)) => {
                 for error in j??.into_iter() {
@@ -115,30 +115,39 @@ pub async fn start() -> AppResult<()> {
                 if !running.load() {
                     break;
                 }
+                
+                if let Some(wait) = n? {
+                    if wait {
+                        joined = j;
+                        next = spawn(date_checker::wait_next(date_conf.clone(), time.clone()));
+                    } else {
+                        running.store(false);
+                        cond.notify_one();
 
-                if n? {
-                    joined = j;
-                    next = spawn(date_checker::wait_next(date_conf.clone()));
-                } else {
-                    running.store(false);
-                    handle.close();
-                    cond.notify_one();
+                        for error in j.await??.into_iter() {
+                            error?;
+                        }
 
-                    for error in j.await??.into_iter() {
-                        error?;
+                        'next: loop {
+                           if let Some(is_on) = date_checker::wait_next(date_conf.clone(), time.clone()).await {
+                                if is_on {
+                                    break 'next;
+                                }
+                           } else {
+                                break 'main;
+                           }
+                        }
+                        running.store(true);
+                        let reset = restart(&running, &cond, &time)?;
+
+                        date_conf = reset.0;
+                        clients = reset.1;
+
+                        joined = spawn(try_join_all(clients));
+                        next = spawn(date_checker::wait_next(date_conf.clone(), time.clone()));
                     }
-
-                    while !date_checker::wait_next(date_conf.clone()).await {}
-
-                    running.store(true);
-                    let reset = restart(&running, &cond).await?;
-
-                    date_conf = reset.0;
-                    handle = reset.1;
-                    clients = reset.2;
-
-                    joined = spawn(try_join_all(clients));
-                    next = spawn(date_checker::wait_next(date_conf.clone()));
+                } else {
+                    break;
                 }
             }
         }
