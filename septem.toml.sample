@@ -6,11 +6,12 @@ productive = []
 
 [date_and_time]
 
-# Christmas, Thanksgiving, and MLK jr turned off
+# MLK jr, Valentines, Thanksgiving, and Christmas turned off
 disabled_days = [
-    {month = "Dec", day = 25},
-    {month = "Nov", week = 4, day = "Thu"},
     {month = "Jan", week = 3, day = "Mon"},
+    {month = "Feb", day = 14},
+    {month = "Nov", week = 4, day = "Thu"},
+    {month = "Dec", day = 25},
 ]
 
 # 9am - 5pm hours Workdays
