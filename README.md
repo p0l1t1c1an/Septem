@@ -31,6 +31,3 @@ you were for the week. As well, it has the percentage for each individual applic
 - [ ] Can be reconfigured whilst the program is running
 - [ ] Support for wayland/SwayWM (or seperate version) 
 
-### Rust Libraries being used
-- [xcb](https://github.com/rtbo/rust-xcb) by Remi Thebault - [@rtbo](https://github.com/rtbo)
-- [xcb-util](https://github.com/meh/rust-xcb-util) by A Depressed Man - [@meh](https://github.com/meh)
