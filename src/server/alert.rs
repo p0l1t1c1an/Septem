@@ -1,4 +1,4 @@
-use crate::application::client::{Client, ClientResult, Productive, Running};
+use crate::server::client::{Client, ClientResult, Productive, Running};
 use crate::config::alert_config::AlertConfig;
 
 use std::time::Duration;

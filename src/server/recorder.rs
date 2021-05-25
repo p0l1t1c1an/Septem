@@ -1,7 +1,7 @@
 mod process;
 use process::{Process, ProcessError};
 
-use crate::application::client::{Client, ClientResult, Pid, Productive, Running};
+use crate::server::client::{Client, ClientResult, PidRecv, Productive, Running};
 use crate::config::recorder_config::RecorderConfig;
 
 use tokio::task::JoinError;
@@ -35,6 +35,9 @@ pub enum RecorderError {
 
     #[error("{0}")]
     WriteThreadError(#[from] JoinError),
+    
+    #[error("Pid channel closed")]
+    PidChannelError,
 }
 
 pub type RecorderResult<T> = Result<T, RecorderError>;
@@ -49,7 +52,7 @@ struct Data {
 }
 
 pub struct Recorder {
-    pid: Pid,
+    recv: PidRecv,
     running: Running,
     is_prod: Productive,
     config: RecorderConfig,
@@ -114,14 +117,14 @@ impl Recorder {
     pub fn new(
         share: String,
         conf: RecorderConfig,
-        pid: Pid,
+        recv: PidRecv,
         running: Running,
         is_prod: Productive,
     ) -> RecorderResult<Recorder> {
         let map = Recorder::parse_data(&share, conf.productive())?;
 
         Ok(Recorder {
-            pid,
+            recv,
             running,
             is_prod,
             config: conf,
@@ -151,13 +154,15 @@ impl Recorder {
         Ok(())
     }
 
-    async fn wait_for_event(&mut self) -> ClientResult<()> {
+    async fn wait_for_event(&mut self) -> RecorderResult<()> {
         let get_proc = |u| -> RecorderResult<Process> { Ok(Process::new(u as i32)?) };
-
         self.prev_proc = self.curr_proc.clone();
-        self.curr_proc = match self.pid.wait_pid().await {
-            Some(u) => Some(get_proc(u)?),
-            None => None,
+        self.curr_proc = match self.recv.recv().await {
+            Some(pid) => match pid {
+                Some(u) => Some(get_proc(u)?),
+                None => None,
+            },
+            None => { return Err(RecorderError::PidChannelError); } 
         };
         Ok(())
     }
@@ -173,7 +178,14 @@ impl Client for Recorder {
         self.write_time = SystemTime::now();
 
         while self.running.load() {
-            self.wait_for_event().await?;
+            let error = self.wait_for_event().await;
+            if let Err(e) = error {
+                if let RecorderError::PidChannelError = e {
+                    break;
+                } else {
+                    error?;
+                }
+            }
 
             if let Some(p) = self.curr_proc.clone() {
                 self.is_prod

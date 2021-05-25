@@ -1,4 +1,4 @@
-use crate::application::client::{Client, ClientResult, Condition, Running, Timeout};
+use crate::server::client::{Client, ClientResult, Running, Timeout};
 
 use futures::stream::StreamExt;
 use signal_hook::consts::signal::*;
@@ -22,21 +22,21 @@ type SignalResult<T> = Result<T, SignalError>;
 
 pub struct SignalHandler {
     running: Running,
-    cond: Condition,
-    time: Timeout,
+    event_time: Timeout,
+    stop_start_time: Timeout,
     signals: Signals,
     handle: Handle,
 }
 
 impl SignalHandler {
-    pub fn new(running: Running, cond: Condition, time: Timeout) -> SignalResult<SignalHandler> {
+    pub fn new(running: Running, e_time: Timeout, ss_time: Timeout) -> SignalResult<SignalHandler> {
         let signals = Signals::new(&[SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
         let handle = signals.handle();
 
         Ok(SignalHandler {
             running,
-            cond,
-            time,
+            event_time: e_time,
+            stop_start_time: ss_time,
             signals,
             handle,
         })
@@ -55,8 +55,8 @@ impl Client for SignalHandler {
             match sig {
                 SIGHUP | SIGTERM | SIGINT | SIGQUIT => {
                     self.running.store(false);
-                    self.cond.notify_one();
-                    self.time.notify_one();
+                    self.event_time.notify_one();
+                    self.stop_start_time.notify_one();
                     self.handle.close();
                     break;
                 }

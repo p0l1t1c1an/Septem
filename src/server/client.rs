@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::application::{
+use crate::server::{
     alert::AlertError, event_handler::EventError, recorder::RecorderError,
     signal_handler::SignalError,
 };
@@ -9,6 +9,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{Notify, RwLock};
 use tokio::time::{sleep_until, Duration, Instant};
 
@@ -39,35 +40,21 @@ pub enum ClientError {
 
 pub type ClientResult<T> = Result<T, ClientError>;
 
-#[derive(Clone, Debug)]
-pub struct Pid {
-    val: Arc<(RwLock<Option<u32>>, Notify)>,
-}
+#[derive(Debug)]
+pub struct Pid (pub Sender<Option<u32>>, pub Receiver<Option<u32>>);
 
 unsafe impl Send for Pid {}
 unsafe impl Sync for Pid {}
 
 impl Pid {
     pub fn new() -> Self {
-        Pid {
-            val: Arc::new((RwLock::new(None), Notify::new())),
-        }
-    }
-
-    pub async fn set_pid(&self, val: Option<u32>) {
-        let mut v = self.val.0.write().await;
-        *v = val;
-    }
-
-    pub fn notify_one(&self) {
-        self.val.1.notify_one()
-    }
-
-    pub async fn wait_pid(&self) -> Option<u32> {
-        self.val.1.notified().await;
-        *self.val.0.read().await
+        let (tx, mut rx) = mpsc::channel(1);
+        Pid (tx, rx)
     }
 }
+
+pub type PidSender = Sender<Option<u32>>;
+pub type PidRecv = Receiver<Option<u32>>;
 
 #[derive(Clone, Debug)]
 pub struct Running {
@@ -103,16 +90,14 @@ pub enum WaitTimeout {
 }
 
 #[derive(Clone, Debug)]
-pub struct Condition {
+pub struct Timeout {
     val: Arc<Notify>,
 }
 
-unsafe impl Send for Condition {}
-unsafe impl Sync for Condition {}
+unsafe impl Send for Timeout {}
+unsafe impl Sync for Timeout {}
 
-pub type Timeout = Condition;
-
-impl Condition {
+impl Timeout {
     pub fn new() -> Self {
         Self {
             val: Arc::new(Notify::new()),
@@ -123,15 +108,11 @@ impl Condition {
         self.val.notify_one();
     }
 
-    pub async fn wait(&self) {
-        self.val.notified().await;
-    }
-
     // Returns true if notify is notified
     // false if timeout
     // Could use an enum for which happened
     pub async fn wait_timeout(&self, time: Duration) -> WaitTimeout {
-        let wait = self.wait();
+        let wait = self.val.notified();
         let sleep = sleep_until(Instant::now() + time);
 
         pin_mut!(wait);
@@ -148,3 +129,4 @@ impl Condition {
 pub trait Client {
     async fn start(self) -> ClientResult<()>;
 }
+

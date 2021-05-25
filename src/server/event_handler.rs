@@ -1,8 +1,8 @@
-use crate::application::client::{Client, ClientResult, Condition, Pid, Running};
+use crate::server::client::{Client, ClientResult, Timeout, WaitTimeout, PidSender, Running};
+use crate::config::event_config::EventConfig;
 
 use async_trait::async_trait;
-use futures::future::{select, Either};
-//use tokio::{select, try_join};
+use tokio::time::Duration;
 
 use xcb::{ConnError, GenericError};
 use xcb_util::ewmh;
@@ -11,7 +11,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum EventError {
-    #[error("Connection to the X11 server failed to start or running")]
+    #[error("Connection to the X11 server failed to start or stopped running")]
     ConnectionError(#[from] ConnError),
 
     #[error("Failed to find screen with id: {0}")]
@@ -23,7 +23,11 @@ pub enum EventError {
 
     #[error("Wait_for_event returned None")]
     WaitReturnsNoneError,
+    
+    #[error("Pid Recv must have closed")]
+    PidSenderError,
 }
+
 
 impl From<GenericError> for EventError {
     fn from(error: GenericError) -> Self {
@@ -35,9 +39,10 @@ impl From<GenericError> for EventError {
 type EventResult<T> = Result<T, EventError>;
 
 pub struct EventHandler {
-    pid: Pid,
+    sender: PidSender,
     running: Running,
-    cond: Condition,
+    time: Timeout,
+    config: EventConfig,
     conn: ewmh::Connection,
     screen_id: i32,
     active_win: u32,
@@ -69,7 +74,7 @@ impl EventHandler {
         Ok((ewmh, screen_id))
     }
 
-    pub fn new(pid: Pid, running: Running, cond: Condition) -> EventResult<EventHandler> {
+    pub fn new(config: EventConfig, sender: PidSender, running: Running, time: Timeout) -> EventResult<EventHandler> {
         let (conn, screen_id) = Self::establish_conn()?;
 
         let active_win = conn.ACTIVE_WINDOW();
@@ -77,9 +82,10 @@ impl EventHandler {
         let vis_name = conn.WM_VISIBLE_NAME();
 
         Ok(EventHandler {
-            pid,
+            sender,
             running,
-            cond,
+            time,
+            config,
             conn,
             screen_id,
             active_win,
@@ -87,8 +93,11 @@ impl EventHandler {
             vis_name,
         })
     }
+}
 
-    async fn wait_for_event(self) -> EventResult<()> {
+#[async_trait]
+impl Client for EventHandler {
+    async fn start(self) -> ClientResult<()> {
         let get_aw = |conn, id| -> EventResult<u32> {
             Ok(xcb_util::ewmh::get_active_window(conn, id).get_reply()?)
         };
@@ -97,8 +106,10 @@ impl EventHandler {
             Ok(xcb_util::ewmh::get_wm_pid(conn, aw).get_reply()?)
         };
 
+        let has_error = || -> EventResult<()> { self.conn.has_error()?; Ok(()) };
+
         while self.running.load() {
-            let wait = self.conn.wait_for_event();
+            let wait = self.conn.poll_for_event();
             if let Some(event) = wait {
                 let e = event.response_type() & !0x80;
                 let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
@@ -108,50 +119,24 @@ impl EventHandler {
                     && (a == self.active_win || a == self.wm_name || a == self.vis_name)
                 {
                     let active = get_aw(&self.conn, self.screen_id)?;
-                    {
-                        self.pid.set_pid(if active == xcb::NONE {
-                                None
-                            } else {
-                                Some(get_pid(&self.conn, active)?)
-                            }).await;
+                    let pid = if active == xcb::NONE {
+                            None
+                        } else {
+                            Some(get_pid(&self.conn, active)?)
+                        };
+
+                    if let Err(_) = self.sender.send(pid).await {
+                        return Err(EventError::PidSenderError.into());
                     }
-                    self.pid.notify_one();
                 }
             } else {
-                return Err(EventError::WaitReturnsNoneError.into());
+                has_error()?;
+            }
+            if let WaitTimeout::Notified = self.time.wait_timeout(Duration::from_millis(self.config.delay())).await {
+                break;
             }
         }
         println!("Event End");
-        Ok(())
-    }
-
-    async fn wait_for_condition(pid: Pid, running: Running, cond: Condition) {
-        cond.wait().await;
-        running.store(false);
-        println!("Cond End");
-        pid.notify_one();
-    }
-}
-
-#[async_trait]
-impl Client for EventHandler {
-    async fn start(self) -> ClientResult<()> {
-        {
-            let stopped = tokio::spawn(EventHandler::wait_for_condition(
-                self.pid.clone(),
-                self.running.clone(),
-                self.cond.clone(),
-            ));
-
-            let event = tokio::spawn(self.wait_for_event());
-
-            match select(event, stopped).await {
-                Either::Left((left, _)) => left??,
-                Either::Right((right, _)) => right?,
-            }
-        }
-
-        println!("Very End");
         Ok(())
     }
 }

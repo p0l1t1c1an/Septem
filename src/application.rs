@@ -8,7 +8,7 @@ mod signal_handler;
 use crate::config::{date_config::DateTimeConfig, Config, ConfigError};
 
 use alert::{AlertError, Alerter};
-use client::{Client, ClientError, Condition, Pid, Productive, Running, Timeout};
+use client::{Client, ClientError, Pid, Productive, Running, Timeout};
 use date_checker::DateError;
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
@@ -62,10 +62,9 @@ type ClientThread = JoinHandle<Result<(), ClientError>>;
 
 fn restart(
     running: &Running,
-    cond: &Condition,
     time: &Timeout,
 ) -> AppResult<(DateTimeConfig, Vec<ClientThread>)> {
-    let (share, rec_conf, date_conf, alert_conf) = Config::new(None)?.break_up()?;
+    let (share, rec_conf, event_conf, date_conf, alert_conf) = Config::new(None)?.break_up()?;
     date_checker::sanity_check(&date_conf)?;
 
     running.store(true);
@@ -73,16 +72,13 @@ fn restart(
     let pid = Pid::new();
     let prod = Productive::new(false);
 
-    let event = EventHandler::new(pid.clone(), running.clone(), cond.clone())?;
-    let signal = SignalHandler::new(running.clone(), cond.clone(), time.clone())?;
-    let handle = signal.handle();
+    let event = EventHandler::new(event_conf, pid.0.clone(), running.clone(), time.clone())?;
 
-    let recorder = Recorder::new(share, rec_conf, pid, running.clone(), prod.clone())?;
+    let recorder = Recorder::new(share, rec_conf, pid.1, running.clone(), prod.clone())?;
     let alert = Alerter::new(alert_conf, running.clone(), prod)?;
 
     let clients = vec![
         spawn(event.start()),
-        spawn(signal.start()),
         spawn(recorder.start()),
         spawn(alert.start()),
     ];
@@ -96,9 +92,12 @@ pub async fn start() -> AppResult<()> {
     let time = Timeout::new();
 
     let (_, _, temp_date, _) = Config::new(None)?.break_up()?;
-    date_checker::wait_start(temp_date).await;
+    date_checker::wait_next_start(temp_date).await;
 
-    let (mut date_conf, mut clients) = restart(&running, &cond, &time)?;
+    let signal = SignalHandler::new(running.clone(), cond.clone(), time.clone())?;
+    let sig_thread = spawn(signal.start()); 
+
+    let (mut date_conf, mut clients) = restart(&running, &cond)?;
 
     let mut joined = spawn(try_join_all(clients));
     let mut next = spawn(date_checker::wait_next(date_conf.clone(), time.clone()));
@@ -116,8 +115,8 @@ pub async fn start() -> AppResult<()> {
                     break;
                 }
                 
-                if let Some(wait) = n? {
-                    if wait {
+                if let Some(start) = n? {
+                    if start {
                         joined = j;
                         next = spawn(date_checker::wait_next(date_conf.clone(), time.clone()));
                     } else {
@@ -137,8 +136,9 @@ pub async fn start() -> AppResult<()> {
                                 break 'main;
                            }
                         }
+                        
                         running.store(true);
-                        let reset = restart(&running, &cond, &time)?;
+                        let reset = restart(&running, &cond)?;
 
                         date_conf = reset.0;
                         clients = reset.1;
@@ -152,7 +152,8 @@ pub async fn start() -> AppResult<()> {
             }
         }
     }
-
+    
+    sig_thread.await??;
     println!("App End");
     Ok(())
 }

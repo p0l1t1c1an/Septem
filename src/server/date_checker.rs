@@ -3,7 +3,7 @@ use crate::config::date_config::{
     DateTimeConfig, Hours,
 };
 
-use crate::application::client::{Timeout, WaitTimeout};
+use crate::server::client::{Timeout, WaitTimeout};
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -172,7 +172,7 @@ pub async fn wait_next(config: DateTimeConfig, time: Timeout) -> Option<bool> {
     }
 }
 
-pub async fn wait_start(config: DateTimeConfig) {
+pub async fn wait_next_start(config: DateTimeConfig) {
     let mut next = next_time(&config);
     println!("{:?}", next);
     loop {
