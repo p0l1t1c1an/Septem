@@ -3,16 +3,11 @@ use crate::config::date_config::{
     DateTimeConfig, Hours,
 };
 
-use crate::server::client::{Timeout, WaitTimeout};
-
 use std::collections::HashSet;
 use std::time::Duration;
-use tokio::time::{sleep_until, Instant};
 
 use chrono::{Date, Datelike, Local, NaiveDate, Timelike, Weekday};
 use thiserror::Error;
-
-use StartStopTimes::{EndOfDay, EndOfMonitoring, StartOfMonitoring};
 
 #[derive(Error, Debug)]
 pub enum DateError {
@@ -116,12 +111,12 @@ fn should_run(date: &Date<Local>, config: &DateTimeConfig) -> bool {
     true
 }
 
-fn next_time(config: &DateTimeConfig) -> StartStopTimes {
+pub async fn next_time(config: DateTimeConfig) -> StartStopTimes {
     let now = Local::now();
     let weekday = now.weekday();
-    let (start, stop) = weekdays_hours(weekday, config);
+    let (start, stop) = weekdays_hours(weekday, &config);
 
-    let run_today = should_run(&now.date(), config);
+    let run_today = should_run(&now.date(), &config);
 
     if run_today {
         if now.hour() < start {
@@ -141,56 +136,3 @@ fn next_time(config: &DateTimeConfig) -> StartStopTimes {
     StartStopTimes::EndOfDay(Duration::from_secs(time as u64), false)
 }
 
-pub async fn wait_next(config: DateTimeConfig, time: Timeout) -> Option<bool> {
-    let next = next_time(&config);
-    match next {
-        EndOfDay(d, _) => {
-            if let WaitTimeout::TimedOut = time.wait_timeout(d).await {
-                Some(match next_time(&config) {
-                    EndOfDay(_, is_on) => is_on,
-                    EndOfMonitoring(_) => true,
-                    StartOfMonitoring(_) => false,
-                })
-            } else {
-                None
-            }
-        }
-        EndOfMonitoring(d) => {
-            if let WaitTimeout::TimedOut = time.wait_timeout(d).await {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        StartOfMonitoring(d) => {
-            if let WaitTimeout::TimedOut = time.wait_timeout(d).await {
-                Some(true) 
-            } else { 
-                None    
-            }
-        }
-    }
-}
-
-pub async fn wait_next_start(config: DateTimeConfig) {
-    let mut next = next_time(&config);
-    println!("{:?}", next);
-    loop {
-        match next {
-            EndOfDay(d, is_on) => {
-                if !is_on {
-                    sleep_until(Instant::now() + d).await;
-                } else {
-                    break;
-                }
-            }
-            EndOfMonitoring(_) => {
-                break;
-            }
-            StartOfMonitoring(d) => {
-                sleep_until(Instant::now() + d).await;
-            }
-        }
-        next = next_time(&config);
-    }
-}
