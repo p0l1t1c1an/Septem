@@ -8,7 +8,7 @@ mod signal_handler;
 use crate::config::{Config, ConfigError};
 
 use alert::{AlertError, Alerter};
-use client::{Client, ClientError, Pid, Productive, Running, Timeout};
+use client::{Client, ClientError, Pid, Productive, Running, Timeout, WaitTimeout};
 use date_checker::{*, StartStopTimes::*};
 use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
@@ -19,6 +19,7 @@ use std::mem::replace;
 use futures::future::{select, try_join_all, Either};
 use tokio::spawn;
 use tokio::task::{JoinError, JoinHandle};
+use tokio::time::Duration;
 
 use signal_hook_tokio::Handle;
 
@@ -26,15 +27,23 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ServerError {
+    // States are improperly handled
     #[error("Invalid Server State")]
     ServerStateError,
 
+    // StartStopTimes are improperly handled
+    #[error("Invalid StopStartTime State")]
+    TimeStateError,
+
+    // Error when joining threads
     #[error("{0}")]
     JoinAllError(#[from] JoinError),
 
+    // Errors when clients are running
     #[error("{0}")]
     RunningClientError(#[from] ClientError),
-
+    
+    // Errors when creating clients
     #[error("{0}")]
     StartUpAlertError(#[from] AlertError),
 
@@ -56,7 +65,7 @@ pub enum ServerError {
 
 type ServerResult<T> = Result<T, ServerError>;
 type ClientThread = JoinHandle<Result<(), ClientError>>;
-type Waiting = JoinHandle<Option<bool>>;
+type Waiting = JoinHandle<WaitTimeout>;
 
 enum SeverState {
     Init(Alerter, EventHandler, Recorder),
@@ -114,30 +123,43 @@ impl Server {
     }
 
     async fn start(&mut self, next: StartStopTimes) -> ServerResult<()> {
-        /*
-         * Check state of next 
-         * Should be EndOfMonitoring || EndOfDay w/ is_on true
-         * Otherwise Error 
-         * Then spawn wait thread waiting until duration in next 
-         */
+        let dur = match next {
+            EndOfDay(d, is_on) => {
+                if is_on {
+                    Some(d)
+                } else {
+                    None
+                }
+            }
+            EndOfMonitoring(d) => {
+                Some(d)
+            }
+            StartOfMonitoring(d) => {
+                None
+            }
+        };
+     
+        if let Some(d) = dur {
+            let wait = spawn(wait_timeout(self.stop_time.clone(), d));
+            let init = replace(&mut self.state, SeverState::Running(Vec::new(), wait));
 
-        let wait = spawn(self.stop_time.wait_timeout(d));
-        let init = replace(&mut self.state, SeverState::Running(Vec::new(), wait));
-
-        if let SeverState::Init(a, e, r) = init {
-            let mut clients = vec![
-                spawn(a.start()),
-                spawn(e.start()),
-                spawn(r.start()),
-            ];
-            if let SeverState::Running(ref mut c, ref _w) = self.state {
-                c.append(&mut clients);
-                Ok(())
+            if let SeverState::Init(a, e, r) = init {
+                let mut clients = vec![
+                    spawn(a.start()),
+                    spawn(e.start()),
+                    spawn(r.start()),
+                ];
+                if let SeverState::Running(ref mut c, ref _w) = self.state {
+                    c.append(&mut clients);
+                    Ok(())
+                } else {
+                    Err(ServerError::ServerStateError)
+                }
             } else {
                 Err(ServerError::ServerStateError)
             }
         } else {
-            Err(ServerError::ServerStateError)
+            Err(ServerError::TimeStateError)
         }
     }
 
@@ -216,4 +238,11 @@ impl Server {
         Ok(())
     }
 }
+
+
+// Extra utility functions
+async fn wait_timeout(t: Timeout, d: Duration) -> WaitTimeout {
+    t.wait_timeout(d).await
+}
+
 
