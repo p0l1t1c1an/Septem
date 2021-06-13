@@ -1,4 +1,4 @@
-use crate::server::client::{Client, ClientResult, Timeout, WaitTimeout, PidSender, Running};
+use crate::server::client::{Client, ClientResult, Timeout, PidSender, Running};
 use crate::config::event_config::EventConfig;
 
 use async_trait::async_trait;
@@ -41,7 +41,7 @@ type EventResult<T> = Result<T, EventError>;
 pub struct EventHandler {
     sender: PidSender,
     running: Running,
-    time: Timeout,
+    timeout: Timeout,
     config: EventConfig,
     conn: ewmh::Connection,
     screen_id: i32,
@@ -74,7 +74,7 @@ impl EventHandler {
         Ok((ewmh, screen_id))
     }
 
-    pub fn new(config: EventConfig, sender: PidSender, running: Running, time: Timeout) -> EventResult<EventHandler> {
+    pub fn new(config: EventConfig, sender: PidSender, running: Running, timeout: Timeout) -> EventResult<EventHandler> {
         let (conn, screen_id) = Self::establish_conn()?;
 
         let active_win = conn.ACTIVE_WINDOW();
@@ -84,7 +84,7 @@ impl EventHandler {
         Ok(EventHandler {
             sender,
             running,
-            time,
+            timeout,
             config,
             conn,
             screen_id,
@@ -132,9 +132,7 @@ impl Client for EventHandler {
             } else {
                 has_error()?;
             }
-            if let WaitTimeout::Notified = self.time.wait_timeout(Duration::from_millis(self.config.delay())).await {
-                break;
-            }
+            self.timeout.wait_timeout(Duration::from_millis(self.config.delay())).await?;
         }
         println!("Event End");
         Ok(())

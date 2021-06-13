@@ -22,6 +22,9 @@ use tokio::task::JoinError;
 
 #[derive(Error, Debug)]
 pub enum ClientError {
+    #[error("Timeout was interrupted")]
+    TimeoutError,
+
     #[error("{0}")]
     JoinThreadError(#[from] JoinError),
 
@@ -84,11 +87,6 @@ impl Running {
     }
 }
 
-pub enum WaitTimeout {
-    Notified,
-    TimedOut,
-}
-
 #[derive(Clone, Debug)]
 pub struct Timeout {
     val: Arc<Notify>,
@@ -108,10 +106,7 @@ impl Timeout {
         self.val.notify_one();
     }
 
-    // Returns true if notify is notified
-    // false if timeout
-    // Could use an enum for which happened
-    pub async fn wait_timeout(&self, time: Duration) -> WaitTimeout {
+    pub async fn wait_timeout(&self, time: Duration) -> ClientResult<()> {
         let wait = self.val.notified();
         let sleep = sleep_until(Instant::now() + time);
 
@@ -119,8 +114,8 @@ impl Timeout {
         pin_mut!(sleep);
 
         match select(wait, sleep).await { 
-            Either::Left(_) => WaitTimeout::Notified,
-            Either::Right(_) => WaitTimeout::TimedOut,
+            Either::Left(_) => Err(ClientError::TimeoutError),
+            Either::Right(_) => Ok(()),        
         }
     }
 }

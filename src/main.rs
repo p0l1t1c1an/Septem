@@ -1,12 +1,12 @@
 //pub mod application;
 pub mod config;
-pub mod server;
+mod server;
 
-use application::AppError;
+use server::{Server, ServerError};
 
 #[tokio::main]
-async fn main() -> Result<(), AppError> {
-    application::start().await?;
+async fn main() -> Result<(), ServerError> {
+    Server::new(None);
     println!("Main End");
     Ok(())
 }
