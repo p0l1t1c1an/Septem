@@ -1,5 +1,5 @@
-use crate::server::client::{Client, ClientResult, Productive, Running};
 use crate::config::alert_config::AlertConfig;
+use crate::server::client::{Client, ClientResult, Productive, Running};
 
 use std::time::Duration;
 use tokio::time::sleep;
@@ -35,7 +35,12 @@ impl Alerter {
         }
     }
 
-    pub fn new(config: AlertConfig, running: Running, alerts_on: Running, is_prod: Productive) -> AlertResult<Alerter> {
+    pub fn new(
+        config: AlertConfig,
+        running: Running,
+        alerts_on: Running,
+        is_prod: Productive,
+    ) -> AlertResult<Alerter> {
         Alerter::sanity_check_conf(&config)?;
         Ok(Alerter {
             running,

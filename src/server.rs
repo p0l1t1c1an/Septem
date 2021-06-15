@@ -23,14 +23,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ServerError {
-    // States are improperly handled
-    #[error("Invalid Server State")]
-    ServerStateError,
-
-    // StartStopTimes are improperly handled
-    #[error("Invalid StopStartTime State")]
-    TimeStateError,
-
     // Error when joining threads
     #[error("{0}")]
     JoinAllError(#[from] JoinError),
@@ -38,7 +30,7 @@ pub enum ServerError {
     // Errors when clients are running
     #[error("{0}")]
     RunningClientError(#[from] ClientError),
-    
+
     // Errors when creating clients
     #[error("{0}")]
     StartUpAlertError(#[from] AlertError),
@@ -74,11 +66,11 @@ pub struct Server {
 impl Server {
     pub fn new(config_file: Option<String>) -> ServerResult<Server> {
         let config = Config::new(config_file.clone())?;
-        let share  = config.share()?;
+        let share = config.share()?;
         let a_conf = config.alert_config();
         let e_conf = config.event_config();
         let d_conf = config.date_config();
-        let r_conf = config.recorder_config(); 
+        let r_conf = config.recorder_config();
 
         let running = Running::new(true);
         let timeout = Timeout::new();
@@ -90,29 +82,25 @@ impl Server {
         let event = EventHandler::new(e_conf, pid.0.clone(), running.clone(), timeout.clone())?;
         let signal = SignalHandler::new(running.clone(), timeout.clone())?;
         let recorder = Recorder::new(share, r_conf, pid.1, running.clone(), prod.clone())?;
-        let date = DateChecker::new(d_conf, running.clone(), alerts_on.clone(), timeout.clone())?; 
+        let date = DateChecker::new(d_conf, running.clone(), alerts_on.clone(), timeout.clone())?;
         let alert = Alerter::new(a_conf, running.clone(), alerts_on, prod)?;
-    
+
         let sig_handle = signal.handle();
         let clients = vec![
             spawn(event.start()),
             spawn(signal.start()),
-            spawn(recorder.start()), 
+            spawn(recorder.start()),
             spawn(date.start()),
             spawn(alert.start()),
         ];
 
-        Ok(
-            Server {
-                config_file,
-                config,
-                running,
-                timeout,
-                sig_handle,
-                clients,
-            }
-        )
+        Ok(Server {
+            config_file,
+            config,
+            running,
+            timeout,
+            sig_handle,
+            clients,
+        })
     }
 }
-
-

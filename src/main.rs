@@ -6,7 +6,7 @@ use server::{Server, ServerError};
 
 #[tokio::main]
 async fn main() -> Result<(), ServerError> {
-    Server::new(None);
+    Server::new(None)?;
     println!("Main End");
     Ok(())
 }

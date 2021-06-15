@@ -1,5 +1,5 @@
-use crate::server::client::{Client, ClientResult, Timeout, PidSender, Running};
 use crate::config::event_config::EventConfig;
+use crate::server::client::{Client, ClientResult, PidSender, Running, Timeout};
 
 use async_trait::async_trait;
 use tokio::time::Duration;
@@ -21,13 +21,9 @@ pub enum EventError {
     #[error("Failed either the mask change, EWMH connection, or active window\nError Code is {1}")]
     GenericXcbError(GenericError, u8),
 
-    #[error("Wait_for_event returned None")]
-    WaitReturnsNoneError,
-    
     #[error("Pid Recv must have closed")]
     PidSenderError,
 }
-
 
 impl From<GenericError> for EventError {
     fn from(error: GenericError) -> Self {
@@ -74,7 +70,12 @@ impl EventHandler {
         Ok((ewmh, screen_id))
     }
 
-    pub fn new(config: EventConfig, sender: PidSender, running: Running, timeout: Timeout) -> EventResult<EventHandler> {
+    pub fn new(
+        config: EventConfig,
+        sender: PidSender,
+        running: Running,
+        timeout: Timeout,
+    ) -> EventResult<EventHandler> {
         let (conn, screen_id) = Self::establish_conn()?;
 
         let active_win = conn.ACTIVE_WINDOW();
@@ -106,7 +107,10 @@ impl Client for EventHandler {
             Ok(xcb_util::ewmh::get_wm_pid(conn, aw).get_reply()?)
         };
 
-        let has_error = || -> EventResult<()> { self.conn.has_error()?; Ok(()) };
+        let has_error = || -> EventResult<()> {
+            self.conn.has_error()?;
+            Ok(())
+        };
 
         while self.running.load() {
             let wait = self.conn.poll_for_event();
@@ -120,10 +124,10 @@ impl Client for EventHandler {
                 {
                     let active = get_aw(&self.conn, self.screen_id)?;
                     let pid = if active == xcb::NONE {
-                            None
-                        } else {
-                            Some(get_pid(&self.conn, active)?)
-                        };
+                        None
+                    } else {
+                        Some(get_pid(&self.conn, active)?)
+                    };
 
                     if let Err(_) = self.sender.send(pid).await {
                         return Err(EventError::PidSenderError.into());
@@ -132,7 +136,9 @@ impl Client for EventHandler {
             } else {
                 has_error()?;
             }
-            self.timeout.wait_timeout(Duration::from_millis(self.config.delay())).await?;
+            self.timeout
+                .wait_timeout(Duration::from_millis(self.config.delay()))
+                .await?;
         }
         println!("Event End");
         Ok(())

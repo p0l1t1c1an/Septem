@@ -43,7 +43,13 @@ pub struct Config {
     alerts: Option<AlertConfig>,
 }
 
-type BrokenUp = (String, RecorderConfig, EventConfig, DateTimeConfig, AlertConfig);
+type BrokenUp = (
+    String,
+    RecorderConfig,
+    EventConfig,
+    DateTimeConfig,
+    AlertConfig,
+);
 
 impl Config {
     // Temp default solution

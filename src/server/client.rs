@@ -10,7 +10,7 @@ use std::sync::{
     Arc,
 };
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::{Notify, RwLock};
+use tokio::sync::Notify;
 use tokio::time::{sleep_until, Duration, Instant};
 
 use futures::future::{select, Either};
@@ -44,15 +44,15 @@ pub enum ClientError {
 pub type ClientResult<T> = Result<T, ClientError>;
 
 #[derive(Debug)]
-pub struct Pid (pub Sender<Option<u32>>, pub Receiver<Option<u32>>);
+pub struct Pid(pub Sender<Option<u32>>, pub Receiver<Option<u32>>);
 
 unsafe impl Send for Pid {}
 unsafe impl Sync for Pid {}
 
 impl Pid {
     pub fn new() -> Self {
-        let (tx, mut rx) = mpsc::channel(1);
-        Pid (tx, rx)
+        let (tx, rx) = mpsc::channel(1);
+        Pid(tx, rx)
     }
 }
 
@@ -113,9 +113,9 @@ impl Timeout {
         pin_mut!(wait);
         pin_mut!(sleep);
 
-        match select(wait, sleep).await { 
+        match select(wait, sleep).await {
             Either::Left(_) => Err(ClientError::TimeoutError),
-            Either::Right(_) => Ok(()),        
+            Either::Right(_) => Ok(()),
         }
     }
 }
@@ -124,4 +124,3 @@ impl Timeout {
 pub trait Client {
     async fn start(self) -> ClientResult<()>;
 }
-

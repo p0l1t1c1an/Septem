@@ -2,7 +2,7 @@ use crate::config::date_config::{
     Date::{MonthDay, MonthWeekDay},
     DateTimeConfig, Hours,
 };
-use crate::server::client::{Client, ClientResult, Timeout, Running};
+use crate::server::client::{Client, ClientResult, Running, Timeout};
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -47,16 +47,19 @@ pub struct DateChecker {
 }
 
 impl DateChecker {
-    pub fn new(config: DateTimeConfig, running: Running, alerts_on: Running, timeout: Timeout) -> DateResult<DateChecker> {
+    pub fn new(
+        config: DateTimeConfig,
+        running: Running,
+        alerts_on: Running,
+        timeout: Timeout,
+    ) -> DateResult<DateChecker> {
         Self::sanity_check(&config)?;
-        Ok(
-            DateChecker {
-                config,
-                running,
-                alerts_on,
-                timeout,
-            }
-        )
+        Ok(DateChecker {
+            config,
+            running,
+            alerts_on,
+            timeout,
+        })
     }
 
     fn sanity_check(config: &DateTimeConfig) -> DateResult<()> {
@@ -168,19 +171,18 @@ impl Client for DateChecker {
             match self.next_time() {
                 StartOfAlerts(d) => {
                     self.alerts_on.store(false);
-                    self.timeout.wait_timeout(d).await;
+                    self.timeout.wait_timeout(d).await?;
                 }
                 EndOfAlerts(d) => {
                     self.alerts_on.store(true);
-                    self.timeout.wait_timeout(d).await;
+                    self.timeout.wait_timeout(d).await?;
                 }
                 EndOfDay(d, is_running) => {
                     self.alerts_on.store(is_running);
-                    self.timeout.wait_timeout(d).await;
+                    self.timeout.wait_timeout(d).await?;
                 }
             }
         }
         Ok(())
     }
 }
-

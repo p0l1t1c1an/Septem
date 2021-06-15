@@ -7,9 +7,7 @@ pub struct EventConfig {
 
 impl Default for EventConfig {
     fn default() -> Self {
-        Self {
-            delay: 500,
-        }
+        Self { delay: 500 }
     }
 }
 

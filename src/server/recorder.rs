@@ -1,8 +1,8 @@
 mod process;
 use process::{Process, ProcessError};
 
-use crate::server::client::{Client, ClientResult, PidRecv, Productive, Running};
 use crate::config::recorder_config::RecorderConfig;
+use crate::server::client::{Client, ClientResult, PidRecv, Productive, Running};
 
 use tokio::task::JoinError;
 
@@ -35,7 +35,7 @@ pub enum RecorderError {
 
     #[error("{0}")]
     WriteThreadError(#[from] JoinError),
-    
+
     #[error("Pid channel closed")]
     PidChannelError,
 }
@@ -162,7 +162,9 @@ impl Recorder {
                 Some(u) => Some(get_proc(u)?),
                 None => None,
             },
-            None => { return Err(RecorderError::PidChannelError); } 
+            None => {
+                return Err(RecorderError::PidChannelError);
+            }
         };
         Ok(())
     }
@@ -183,7 +185,7 @@ impl Client for Recorder {
                 if let RecorderError::PidChannelError = e {
                     break;
                 } else {
-                    error?;
+                    return Err(e.into());
                 }
             }
 
