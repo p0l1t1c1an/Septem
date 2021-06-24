@@ -165,7 +165,7 @@ impl DateChecker {
 
 #[async_trait]
 impl Client for DateChecker {
-    async fn start(self) -> ClientResult<()> {
+    async fn start(mut self) -> ClientResult<()> {
         use StartStopTimes::*;
         while self.running.load() {
             match self.next_time() {

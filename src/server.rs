@@ -14,6 +14,7 @@ use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use signal_handler::{SignalError, SignalHandler};
 
+use futures::future::try_join_all;
 use tokio::spawn;
 use tokio::task::{JoinError, JoinHandle};
 
@@ -59,6 +60,7 @@ pub struct Server {
     config: Config,
     running: Running,
     timeout: Timeout,
+    window: xcb::Window,
     sig_handle: Handle,
     clients: Vec<ClientThread>,
 }
@@ -68,7 +70,6 @@ impl Server {
         let config = Config::new(config_file.clone())?;
         let share = config.share()?;
         let a_conf = config.alert_config();
-        let e_conf = config.event_config();
         let d_conf = config.date_config();
         let r_conf = config.recorder_config();
 
@@ -79,8 +80,10 @@ impl Server {
         let prod = Productive::new(false);
         let alerts_on = Running::new(true);
 
-        let event = EventHandler::new(e_conf, pid.0.clone(), running.clone(), timeout.clone())?;
-        let signal = SignalHandler::new(running.clone(), timeout.clone())?;
+        let event = EventHandler::new(pid.0.clone(), running.clone())?;
+        let window = event.window();
+
+        let signal = SignalHandler::new(running.clone())?;
         let recorder = Recorder::new(share, r_conf, pid.1, running.clone(), prod.clone())?;
         let date = DateChecker::new(d_conf, running.clone(), alerts_on.clone(), timeout.clone())?;
         let alert = Alerter::new(a_conf, running.clone(), alerts_on, prod)?;
@@ -99,8 +102,29 @@ impl Server {
             config,
             running,
             timeout,
+            window, 
             sig_handle,
             clients,
         })
     }
+
+    pub fn is_running(&self) -> bool {
+        self.running.load()
+    }
+
+    pub async fn poll(&self) -> ServerResult<()> {
+
+        Ok(())
+    }
+
+    pub async fn close(self) {
+        self.timeout.notify_all();
+        let (conn, _) = xcb::Connection::connect(None).unwrap();
+        let event = xcb::ClientMessageEvent::new(32, self.window, xcb::ATOM_ANY, xcb::ClientMessageData::from_data32([0; 5]));
+        xcb::send_event_checked(&conn, false, self.window, xcb::EVENT_MASK_PROPERTY_CHANGE, &event);
+        conn.flush();
+        let _ = try_join_all(self.clients).await;
+        println!("Close");
+    }
 }
+

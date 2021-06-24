@@ -9,12 +9,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::Notify;
+use tokio::sync::{mpsc, Notify};
 use tokio::time::{sleep_until, Duration, Instant};
 
-use futures::future::{select, Either};
-use futures::pin_mut;
+use futures::future::FutureExt;
+use futures::select_biased;
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -43,8 +42,11 @@ pub enum ClientError {
 
 pub type ClientResult<T> = Result<T, ClientError>;
 
+pub type PidSender = mpsc::Sender<Option<u32>>;
+pub type PidRecv = mpsc::Receiver<Option<u32>>;
+
 #[derive(Debug)]
-pub struct Pid(pub Sender<Option<u32>>, pub Receiver<Option<u32>>);
+pub struct Pid(pub PidSender, pub PidRecv);
 
 unsafe impl Send for Pid {}
 unsafe impl Sync for Pid {}
@@ -55,9 +57,6 @@ impl Pid {
         Pid(tx, rx)
     }
 }
-
-pub type PidSender = Sender<Option<u32>>;
-pub type PidRecv = Receiver<Option<u32>>;
 
 #[derive(Clone, Debug)]
 pub struct Running {
@@ -89,7 +88,7 @@ impl Running {
 
 #[derive(Clone, Debug)]
 pub struct Timeout {
-    val: Arc<Notify>,
+    notify: Arc<Notify>,
 }
 
 unsafe impl Send for Timeout {}
@@ -98,24 +97,23 @@ unsafe impl Sync for Timeout {}
 impl Timeout {
     pub fn new() -> Self {
         Self {
-            val: Arc::new(Notify::new()),
+            notify: Arc::new(Notify::new()),
         }
     }
 
-    pub fn notify_one(&self) {
-        self.val.notify_one();
+    pub fn notify_all(&self) {
+        self.notify.notify_waiters();
+        self.notify.notify_one();
+    }
+
+    pub async fn wait(&self) {
+        self.notify.notified().await;
     }
 
     pub async fn wait_timeout(&self, time: Duration) -> ClientResult<()> {
-        let wait = self.val.notified();
-        let sleep = sleep_until(Instant::now() + time);
-
-        pin_mut!(wait);
-        pin_mut!(sleep);
-
-        match select(wait, sleep).await {
-            Either::Left(_) => Err(ClientError::TimeoutError),
-            Either::Right(_) => Ok(()),
+        select_biased! {
+            _ = self.wait().fuse() => Err(ClientError::TimeoutError),
+            _ = sleep_until(Instant::now() + time).fuse() => Ok(()),
         }
     }
 }

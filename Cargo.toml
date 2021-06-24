@@ -13,7 +13,7 @@ libc = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 
 xcb = { version = "0.9", features = ["thread"] }
-xcb-util = { version = "0.3", features = ["ewmh"] }
+xcb-util = { version = "0.3", features = ["ewmh", "thread"] }
 
 futures = "0.3"
 tokio = { version = "1", features = ["full"] }

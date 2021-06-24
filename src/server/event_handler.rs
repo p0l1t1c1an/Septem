@@ -1,12 +1,9 @@
-use crate::config::event_config::EventConfig;
 use crate::server::client::{Client, ClientResult, PidSender, Running, Timeout};
 
-use async_trait::async_trait;
-use tokio::time::Duration;
-
-use xcb::{ConnError, GenericError};
+use xcb::{ConnError, GenericError, GenericEvent};
 use xcb_util::ewmh;
 
+use async_trait::async_trait;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -37,9 +34,8 @@ type EventResult<T> = Result<T, EventError>;
 pub struct EventHandler {
     sender: PidSender,
     running: Running,
-    timeout: Timeout,
-    config: EventConfig,
     conn: ewmh::Connection,
+    window: xcb::Window,
     screen_id: i32,
     active_win: u32,
     wm_name: u32,
@@ -50,7 +46,7 @@ unsafe impl Send for EventHandler {}
 unsafe impl Sync for EventHandler {}
 
 impl EventHandler {
-    fn establish_conn() -> EventResult<(ewmh::Connection, i32)> {
+    fn establish_conn() -> EventResult<(ewmh::Connection, i32, xcb::Window)> {
         let (conn, screen_id) = xcb::Connection::connect(None)?;
         conn.has_error()?;
 
@@ -61,22 +57,25 @@ impl EventHandler {
             .ok_or(EventError::ScreenIteratorError(screen_id))?;
 
         let list = [(xcb::CW_EVENT_MASK, xcb::EVENT_MASK_PROPERTY_CHANGE)];
+        let window = screen.root();
 
-        let cookie = xcb::change_window_attributes_checked(&conn, screen.root(), &list);
+        let cookie = xcb::change_window_attributes_checked(&conn, window, &list);
         cookie.request_check()?;
 
         let ewmh = xcb_util::ewmh::Connection::connect(conn).map_err(|(e, _)| e)?;
 
-        Ok((ewmh, screen_id))
+        Ok((ewmh, screen_id, window))
+    }
+
+    pub fn window(&self) -> xcb::Window {
+        self.window
     }
 
     pub fn new(
-        config: EventConfig,
         sender: PidSender,
         running: Running,
-        timeout: Timeout,
     ) -> EventResult<EventHandler> {
-        let (conn, screen_id) = Self::establish_conn()?;
+        let (conn, screen_id, window) = Self::establish_conn()?;
 
         let active_win = conn.ACTIVE_WINDOW();
         let wm_name = conn.WM_NAME();
@@ -85,9 +84,8 @@ impl EventHandler {
         Ok(EventHandler {
             sender,
             running,
-            timeout,
-            config,
             conn,
+            window,
             screen_id,
             active_win,
             wm_name,
@@ -98,7 +96,7 @@ impl EventHandler {
 
 #[async_trait]
 impl Client for EventHandler {
-    async fn start(self) -> ClientResult<()> {
+    async fn start(mut self) -> ClientResult<()> {
         let get_aw = |conn, id| -> EventResult<u32> {
             Ok(xcb_util::ewmh::get_active_window(conn, id).get_reply()?)
         };
@@ -112,35 +110,48 @@ impl Client for EventHandler {
             Ok(())
         };
 
-        while self.running.load() {
-            let wait = self.conn.poll_for_event();
-            if let Some(event) = wait {
+        while self.running.load() {   
+            let event_option = self.conn.wait_for_event();
+            if let Some(event) = event_option {
                 let e = event.response_type() & !0x80;
-                let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
-                let a = prop.atom();
+                if e == xcb::PROPERTY_NOTIFY {
+                    let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
+                    let a = prop.atom();            
+                    if a == self.active_win || a == self.wm_name || a == self.vis_name { 
+                        let active = get_aw(&self.conn, self.screen_id)?;
+                        let pid = if active == xcb::NONE {
+                            None
+                        } else {
+                            Some(get_pid(&self.conn, active)?)
+                        };
 
-                if e == xcb::PROPERTY_NOTIFY
-                    && (a == self.active_win || a == self.wm_name || a == self.vis_name)
-                {
-                    let active = get_aw(&self.conn, self.screen_id)?;
-                    let pid = if active == xcb::NONE {
-                        None
-                    } else {
-                        Some(get_pid(&self.conn, active)?)
-                    };
-
-                    if let Err(_) = self.sender.send(pid).await {
-                        return Err(EventError::PidSenderError.into());
+                        if let Err(_) = &self.sender.send(pid).await {
+                            return Err(EventError::PidSenderError.into());
+                        }
                     }
                 }
+                else if e == xcb::CLIENT_MESSAGE {
+                    println!("Client Message");
+                    let client: &xcb::ClientMessageEvent = unsafe { xcb::cast_event(&event) };
+                    if client.type_() == xcb::ATOM_ANY {
+                        if client.format() == 32 {
+                            if client.data().data32().eq(&[0; 5]) {
+                                if let Err(_) = &self.sender.send(None).await {
+                                    return Err(EventError::PidSenderError.into());
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+
             } else {
                 has_error()?;
             }
-            self.timeout
-                .wait_timeout(Duration::from_millis(self.config.delay()))
-                .await?;
+
         }
         println!("Event End");
         Ok(())
     }
 }
+
