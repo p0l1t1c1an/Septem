@@ -3,12 +3,10 @@
 
 pub mod alert_config;
 pub mod date_config;
-pub mod event_config;
 pub mod recorder_config;
 
 use alert_config::AlertConfig;
 use date_config::DateTimeConfig;
-use event_config::EventConfig;
 use recorder_config::RecorderConfig;
 
 use std::env;
@@ -38,18 +36,9 @@ pub enum ConfigError {
 pub struct Config {
     share_directory: Option<String>,
     recorder: RecorderConfig,
-    event_handler: Option<EventConfig>,
     date_and_time: Option<DateTimeConfig>,
     alerts: Option<AlertConfig>,
 }
-
-type BrokenUp = (
-    String,
-    RecorderConfig,
-    EventConfig,
-    DateTimeConfig,
-    AlertConfig,
-);
 
 impl Config {
     // Temp default solution
@@ -77,25 +66,11 @@ impl Config {
         self.recorder.to_owned()
     }
 
-    pub fn event_config(&self) -> EventConfig {
-        self.event_handler.to_owned().unwrap_or_default()
-    }
-
     pub fn date_config(&self) -> DateTimeConfig {
         self.date_and_time.to_owned().unwrap_or_default()
     }
 
     pub fn alert_config(&self) -> AlertConfig {
         self.alerts.to_owned().unwrap_or_default()
-    }
-
-    pub fn break_up(self) -> Result<BrokenUp, ConfigError> {
-        Ok((
-            self.share()?,
-            self.recorder_config(),
-            self.event_config(),
-            self.date_config(),
-            self.alert_config(),
-        ))
     }
 }

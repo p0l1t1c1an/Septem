@@ -6,9 +6,7 @@ use server::{Server, ServerError};
 
 #[tokio::main]
 async fn main() -> Result<(), ServerError> {
-    let server = Server::new(None)?;
-    while server.is_running() { } 
+    Server::new(None)?.await?;
     println!("Main End");
-    server.close().await;
     Ok(())
 }

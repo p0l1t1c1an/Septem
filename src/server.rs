@@ -14,13 +14,21 @@ use event_handler::{EventError, EventHandler};
 use recorder::{Recorder, RecorderError};
 use signal_handler::{SignalError, SignalHandler};
 
-use futures::future::try_join_all;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use futures::{
+    future::{try_join_all, TryJoinAll},
+    FutureExt,
+};
+use signal_hook_tokio::Handle;
 use tokio::spawn;
 use tokio::task::{JoinError, JoinHandle};
 
-use signal_hook_tokio::Handle;
-
 use thiserror::Error;
+
+use self::client::ClientResult;
 
 #[derive(Debug, Error)]
 pub enum ServerError {
@@ -53,7 +61,7 @@ pub enum ServerError {
 }
 
 type ServerResult<T> = Result<T, ServerError>;
-type ClientThread = JoinHandle<Result<(), ClientError>>;
+type ClientThread = JoinHandle<ClientResult<()>>;
 
 pub struct Server {
     config_file: Option<String>,
@@ -62,7 +70,7 @@ pub struct Server {
     timeout: Timeout,
     window: xcb::Window,
     sig_handle: Handle,
-    clients: Vec<ClientThread>,
+    clients: TryJoinAll<ClientThread>,
 }
 
 impl Server {
@@ -89,20 +97,20 @@ impl Server {
         let alert = Alerter::new(a_conf, running.clone(), alerts_on, prod)?;
 
         let sig_handle = signal.handle();
-        let clients = vec![
+        let clients = try_join_all(vec![
             spawn(event.start()),
             spawn(signal.start()),
             spawn(recorder.start()),
             spawn(date.start()),
             spawn(alert.start()),
-        ];
+        ]);
 
         Ok(Server {
             config_file,
             config,
             running,
             timeout,
-            window, 
+            window,
             sig_handle,
             clients,
         })
@@ -112,19 +120,58 @@ impl Server {
         self.running.load()
     }
 
-    pub async fn poll(&self) -> ServerResult<()> {
-
-        Ok(())
-    }
-
-    pub async fn close(self) {
+    pub fn close(&self) -> ServerResult<()> {
         self.timeout.notify_all();
         let (conn, _) = xcb::Connection::connect(None).unwrap();
-        let event = xcb::ClientMessageEvent::new(32, self.window, xcb::ATOM_ANY, xcb::ClientMessageData::from_data32([0; 5]));
-        xcb::send_event_checked(&conn, false, self.window, xcb::EVENT_MASK_PROPERTY_CHANGE, &event);
+        let event = xcb::ClientMessageEvent::new(
+            32,
+            self.window,
+            xcb::ATOM_ANY,
+            xcb::ClientMessageData::from_data32([0; 5]),
+        );
+        xcb::send_event_checked(
+            &conn,
+            false,
+            self.window,
+            xcb::EVENT_MASK_PROPERTY_CHANGE,
+            &event,
+        );
         conn.flush();
-        let _ = try_join_all(self.clients).await;
+        if !self.sig_handle.is_closed() {
+            self.sig_handle.close();
+        }
         println!("Close");
+        Ok(())
     }
 }
 
+fn check_clients(clients_result: Result<Vec<ClientResult<()>>, JoinError>) -> ServerResult<()> {
+    let clients = clients_result?;
+    for c in clients.into_iter() {
+        c?;
+    }
+    Ok(())
+}
+
+impl Future for Server {
+    type Output = ServerResult<()>;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.is_running() {
+            if let Poll::Ready(_) = self.clients.poll_unpin(cx) {
+                self.sig_handle.close();
+            }
+            Poll::Pending
+        } else {
+            let closed = self.close();
+            if closed.is_err() {
+                return Poll::Ready(closed);
+            }
+
+            loop {
+                if let Poll::Ready(c) = self.clients.poll_unpin(cx) {
+                    return Poll::Ready(check_clients(c));
+                }
+            }
+        }
+    }
+}

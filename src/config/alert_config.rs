@@ -16,8 +16,8 @@ impl Default for AlertConfig {
     fn default() -> Self {
         Self {
             delay: 500,
-            productive_time: 5.0,    // Resets at 5 minutes
-            unproductive_time: 20.0, // Prints message at 5 minutes
+            productive_time: 5.0,   // Resets at 5 minutes
+            unproductive_time: 1.0, // Prints message at 5 minutes
             message: "You have been wasting time.\nPlease start being productive.".to_owned(),
         }
     }

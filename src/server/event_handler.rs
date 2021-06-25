@@ -1,6 +1,6 @@
-use crate::server::client::{Client, ClientResult, PidSender, Running, Timeout};
+use crate::server::client::{Client, ClientResult, PidSender, Running};
 
-use xcb::{ConnError, GenericError, GenericEvent};
+use xcb::{ConnError, GenericError};
 use xcb_util::ewmh;
 
 use async_trait::async_trait;
@@ -71,10 +71,7 @@ impl EventHandler {
         self.window
     }
 
-    pub fn new(
-        sender: PidSender,
-        running: Running,
-    ) -> EventResult<EventHandler> {
+    pub fn new(sender: PidSender, running: Running) -> EventResult<EventHandler> {
         let (conn, screen_id, window) = Self::establish_conn()?;
 
         let active_win = conn.ACTIVE_WINDOW();
@@ -110,14 +107,14 @@ impl Client for EventHandler {
             Ok(())
         };
 
-        while self.running.load() {   
+        while self.running.load() {
             let event_option = self.conn.wait_for_event();
             if let Some(event) = event_option {
                 let e = event.response_type() & !0x80;
                 if e == xcb::PROPERTY_NOTIFY {
                     let prop: &xcb::PropertyNotifyEvent = unsafe { xcb::cast_event(&event) };
-                    let a = prop.atom();            
-                    if a == self.active_win || a == self.wm_name || a == self.vis_name { 
+                    let a = prop.atom();
+                    if a == self.active_win || a == self.wm_name || a == self.vis_name {
                         let active = get_aw(&self.conn, self.screen_id)?;
                         let pid = if active == xcb::NONE {
                             None
@@ -129,8 +126,7 @@ impl Client for EventHandler {
                             return Err(EventError::PidSenderError.into());
                         }
                     }
-                }
-                else if e == xcb::CLIENT_MESSAGE {
+                } else if e == xcb::CLIENT_MESSAGE {
                     println!("Client Message");
                     let client: &xcb::ClientMessageEvent = unsafe { xcb::cast_event(&event) };
                     if client.type_() == xcb::ATOM_ANY {
@@ -144,14 +140,11 @@ impl Client for EventHandler {
                         }
                     }
                 }
-
             } else {
                 has_error()?;
             }
-
         }
         println!("Event End");
         Ok(())
     }
 }
-

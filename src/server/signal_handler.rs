@@ -50,8 +50,6 @@ impl Client for SignalHandler {
         while let Some(sig) = signals.next().await {
             match sig {
                 SIGHUP | SIGTERM | SIGINT | SIGQUIT => {
-                    self.running.store(false);
-                    self.handle.close();
                     break;
                 }
                 _ => {
@@ -59,6 +57,8 @@ impl Client for SignalHandler {
                 }
             }
         }
+        self.handle.close();
+        self.running.store(false);
         println!("Signal End");
         Ok(())
     }
