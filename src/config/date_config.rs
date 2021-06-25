@@ -1,4 +1,4 @@
-use chrono::{Month, Weekday};
+use chrono::{Month, NaiveTime, Weekday};
 use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Debug)]
@@ -18,8 +18,8 @@ pub enum Date {
 #[derive(Clone, Deserialize, Debug)]
 pub struct Hours {
     weekday: Weekday,
-    start: u32,
-    stop: u32,
+    start: NaiveTime,
+    stop: NaiveTime,
 }
 
 impl Hours {
@@ -27,11 +27,11 @@ impl Hours {
         self.weekday
     }
 
-    pub fn start(&self) -> u32 {
+    pub fn start(&self) -> NaiveTime {
         self.start
     }
 
-    pub fn stop(&self) -> u32 {
+    pub fn stop(&self) -> NaiveTime {
         self.stop
     }
 }
@@ -40,8 +40,8 @@ impl Default for Hours {
     fn default() -> Self {
         Self {
             weekday: Weekday::Mon,
-            start: 0,
-            stop: 24,
+            start: NaiveTime::from_hms(0, 0, 0),
+            stop: NaiveTime::from_hms(23, 59, 59),
         }
     }
 }

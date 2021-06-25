@@ -60,7 +60,7 @@ pub enum ServerError {
     StartUpSignalError(#[from] SignalError),
 }
 
-type ServerResult<T> = Result<T, ServerError>;
+pub type ServerResult<T> = Result<T, ServerError>;
 type ClientThread = JoinHandle<ClientResult<()>>;
 
 pub struct Server {

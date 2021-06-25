@@ -7,7 +7,7 @@ use crate::server::client::{Client, ClientResult, Running, Timeout};
 use std::collections::HashSet;
 use std::time::Duration;
 
-use chrono::{Date, Datelike, Local, NaiveDate, Timelike, Weekday};
+use chrono::{Date, Datelike, Local, NaiveDate, NaiveTime, Timelike, Weekday};
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -25,9 +25,6 @@ pub enum DateError {
 
     #[error("{0} was stated multiple times in config for start times")]
     RepeatedWeekdayError(Weekday),
-
-    #[error("A weekday has one or more of its hours set higher than 24")]
-    HoursTooHighError,
 }
 
 type DateResult<T> = Result<T, DateError>;
@@ -95,15 +92,13 @@ impl DateChecker {
 
             if hours.start() >= hours.stop() {
                 return Err(DateError::FlipFlopTimeError(hours.weekday()));
-            } else if hours.start() > 24 || hours.stop() > 24 {
-                return Err(DateError::HoursTooHighError);
             }
         }
 
         Ok(())
     }
 
-    fn weekdays_hours(&self, weekday: Weekday) -> (u32, u32) {
+    fn weekdays_hours(&self, weekday: Weekday) -> (NaiveTime, NaiveTime) {
         for hours in self.config.start_hours() {
             if weekday == hours.weekday() {
                 return (hours.start(), hours.stop());
@@ -145,15 +140,22 @@ impl DateChecker {
         let run_today = self.should_run(&now.date());
 
         if run_today {
-            if now.hour() < start {
-                let time = (start - now.hour()) * 3600 - now.minute() * 60 - now.second();
-                return StartStopTimes::StartOfAlerts(Duration::from_secs(time as u64));
-            } else if now.hour() >= start && now.hour() < stop {
-                let time = (stop - now.hour()) * 3600 - now.minute() * 60 - now.second();
-                if stop == 24 {
-                    return StartStopTimes::EndOfDay(Duration::from_secs(time as u64), true);
+            if now.time() < start {
+                let time = start - now.time();
+                return StartStopTimes::StartOfAlerts(Duration::from_secs(
+                    time.num_seconds() as u64
+                ));
+            } else if now.time() >= start && now.time() < stop {
+                let time = stop - now.time();
+                if stop == NaiveTime::from_hms(23, 59, 59) {
+                    return StartStopTimes::EndOfDay(
+                        Duration::from_secs(time.num_seconds() as u64),
+                        true,
+                    );
                 } else {
-                    return StartStopTimes::EndOfAlerts(Duration::from_secs(time as u64));
+                    return StartStopTimes::EndOfAlerts(Duration::from_secs(
+                        time.num_seconds() as u64
+                    ));
                 }
             }
         }
