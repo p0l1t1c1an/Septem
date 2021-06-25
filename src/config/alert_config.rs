@@ -1,4 +1,4 @@
-use serde_derive::Deserialize;
+use serde::Deserialize;
 
 // Todo: Add Enum and alert type for config
 // It can be a pop up message or play audio

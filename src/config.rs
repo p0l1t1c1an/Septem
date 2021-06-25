@@ -14,7 +14,7 @@ use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 
-use serde_derive::Deserialize;
+use serde::Deserialize;
 use thiserror::Error;
 
 const DEFAULT_SHARE: &str = "/.local/share/Septem/";

@@ -14,7 +14,7 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use csv::{ReaderBuilder, WriterBuilder};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const DATA_FILE: &str = "data.csv";

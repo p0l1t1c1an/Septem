@@ -1,5 +1,5 @@
 use chrono::{Month, Weekday};
-use serde_derive::Deserialize;
+use serde::Deserialize;
 
 #[derive(Clone, Deserialize, Debug)]
 #[serde(untagged)]
