@@ -11,8 +11,6 @@ use thiserror::Error;
 pub enum AlertError {
     #[error("The alert message is empty and would not show anything")]
     EmptyMessageError,
-    //#[error("The sender was dropped while the receiver was up")]
-    //ReceiverError,
 }
 
 pub type AlertResult<T> = Result<T, AlertError>;

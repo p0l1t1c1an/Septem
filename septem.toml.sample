@@ -17,12 +17,12 @@ disabled_days = [
 # 9am - 5pm hours Workdays
 # 12pm - 3pm hours Weekends
 start_hours = [
-    {weekday = "Mon", start = 9, stop = 17},
-    {weekday = "Tue", start = 9, stop = 17},
-    {weekday = "Wed", start = 9, stop = 17},
-    {weekday = "Thu", start = 9, stop = 17},
-    {weekday = "Fri", start = 9, stop = 17},
-    {weekday = "Sat", start = 12, stop = 15},
-    {weekday = "Sun", start = 12, stop = 15},
+    {weekday = "Mon", start = "9:30:00", stop = "17:00:00"},
+    {weekday = "Tue", start = "9:30:00", stop = "17:00:00"},
+    {weekday = "Wed", start = "9:30:00", stop = "17:00:00"},
+    {weekday = "Thu", start = "9:30:00", stop = "17:00:00"},
+    {weekday = "Fri", start = "9:30:00", stop = "17:00:00"},
+    {weekday = "Sat", start = "12:00:00", stop = "15:00:00"},
+    {weekday = "Sun", start = "12:00:00", stop = "15:00:00"},
 ]
 
