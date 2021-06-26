@@ -2,8 +2,8 @@
 
 use libc::{c_char, c_int, c_void, free, pid_t};
 
-#[cfg(target_os = "freebsd")]
 extern "C" {
+    #[cfg(target_os = "freebsd")]
     fn proc_name(name_ptr: *mut *mut c_char, pid: pid_t) -> c_int;
 }
 

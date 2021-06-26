@@ -1,18 +1,11 @@
-mod application;
-use application::AppError;
+pub mod config;
+mod server;
 
-use tokio::runtime::Runtime;
+use server::{Server, ServerResult};
 
-// Async closures are unstable so ...
-async fn start() -> Result<(), AppError> {
-    application::start().await?;
-    Ok(())
-}
-
-fn main() -> Result<(), AppError> {
-    let run = Runtime::new().unwrap();
-    let to_check = run.block_on(start());
-    run.shutdown_timeout(std::time::Duration::from_millis(10));
+#[tokio::main]
+async fn main() -> ServerResult<()> {
+    Server::new(None)?.await?;
     println!("Main End");
-    to_check
+    Ok(())
 }

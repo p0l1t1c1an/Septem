@@ -1,11 +1,10 @@
-use crate::application::client::{Client, ClientResult, Condition, Shutdown};
+use crate::server::client::{Client, ClientResult, Running};
 
 use futures::stream::StreamExt;
 use signal_hook::consts::signal::*;
 use signal_hook_tokio::{Handle, Signals};
 
 use std::io;
-use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -22,43 +21,45 @@ pub enum SignalError {
 type SignalResult<T> = Result<T, SignalError>;
 
 pub struct SignalHandler {
-    shutdown: Shutdown,
-    cond: Condition,
+    running: Running,
     signals: Signals,
     handle: Handle,
 }
 
 impl SignalHandler {
-    pub fn new(shutdown: Shutdown, cond: Condition) -> SignalResult<SignalHandler> {
+    pub fn new(running: Running) -> SignalResult<SignalHandler> {
         let signals = Signals::new(&[SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
         let handle = signals.handle();
 
         Ok(SignalHandler {
-            shutdown,
-            cond,
+            running,
             signals,
             handle,
         })
+    }
+
+    pub fn handle(&self) -> Handle {
+        self.handle.clone()
     }
 }
 
 #[async_trait]
 impl Client for SignalHandler {
-    async fn start(self) -> ClientResult {
+    async fn start(self) -> ClientResult<()> {
         let mut signals = self.signals.fuse();
         while let Some(sig) = signals.next().await {
             match sig {
                 SIGHUP | SIGTERM | SIGINT | SIGQUIT => {
-                    self.shutdown.store(true, Ordering::SeqCst);
-                    let (_, c) = &*self.cond;
-                    c.notify_one();
-                    self.handle.close();
                     break;
                 }
-                _ => { return Err(SignalError::UnknownSignalError.into()); }
+                _ => {
+                    return Err(SignalError::UnknownSignalError.into());
+                }
             }
         }
-
+        self.handle.close();
+        self.running.store(false);
+        println!("Signal End");
         Ok(())
     }
 }
