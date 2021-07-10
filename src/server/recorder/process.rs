@@ -3,7 +3,7 @@
 use libc::{c_char, c_int, c_void, free, pid_t};
 
 extern "C" {
-    #[cfg(target_os = "freebsd")]
+    #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
     fn proc_name(name_ptr: *mut *mut c_char, pid: pid_t) -> c_int;
 }
 
@@ -41,7 +41,7 @@ pub struct Process {
 unsafe impl Send for Process {}
 
 impl Process {
-    #[cfg(target_os = "freebsd")]
+    #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
     pub fn new(p: pid_t) -> Result<Process, ProcessError> {
         let mut proc = Process {
             pid: p,

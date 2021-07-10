@@ -1,8 +1,12 @@
 fn main() {
-    if cfg!(target_os = "freebsd") {
+    if cfg!(any(target_os = "freebsd", target_os = "openbsd")) {
         cc::Build::new()
             .file("src/server/recorder/proc_name.c")
             .compile("proc_name");
-        println!(r"cargo:rustc-link-search=/usr/local/lib");
+        if cfg!(target_os = "freebsd") {
+            println!(r"cargo:rustc-link-search=/usr/local/lib");
+        } else if cfg!(target_os = "openbsd") {
+            println!(r"cargo:rustc-link-search=/usr/X11R6/lib"); 
+        }
     }
 }
