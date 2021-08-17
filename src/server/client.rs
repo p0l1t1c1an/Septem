@@ -53,7 +53,7 @@ unsafe impl Sync for Pid {}
 
 impl Pid {
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel(1);
+        let (tx, rx) = mpsc::channel(2);
         Pid(tx, rx)
     }
 }

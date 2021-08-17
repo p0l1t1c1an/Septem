@@ -157,6 +157,7 @@ impl Recorder {
     async fn wait_for_event(&mut self) -> RecorderResult<()> {
         let get_proc = |u| -> RecorderResult<Process> { Ok(Process::new(u as i32)?) };
         self.prev_proc = self.curr_proc.clone();
+        println!("Getting pid");
         self.curr_proc = match self.recv.recv().await {
             Some(pid) => match pid {
                 Some(u) => Some(get_proc(u)?),
@@ -166,6 +167,7 @@ impl Recorder {
                 return Err(RecorderError::PidChannelError);
             }
         };
+        println!("Get pid");
         Ok(())
     }
 }
@@ -215,6 +217,7 @@ impl Client for Recorder {
                 }
             }
 
+            println!("Data:");
             for (proc, (time, prod)) in &self.proc_times {
                 println!("{}, {}, {}", proc, time, prod);
             }

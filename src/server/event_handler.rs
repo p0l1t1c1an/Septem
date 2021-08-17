@@ -121,6 +121,7 @@ impl Client for EventHandler {
                         } else {
                             Some(get_pid(&self.conn, active)?)
                         };
+                        println!("Send Pid");
 
                         if let Err(_) = &self.sender.send(pid).await {
                             return Err(EventError::PidSenderError.into());
